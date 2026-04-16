@@ -10,11 +10,15 @@ pub enum Blocks{
 	FileDataBlock
 }
 
-
+//these stucts are for io handleing
 pub struct RawBlock{
 	data : [u8; 512]
 }
-
+pub struct RawDataBlock{
+	hash : [u8; 32],
+	blockPosition : u32,
+	data : [u8; 476]
+}
 
 
 // all blocks are 512 bytes long
@@ -182,3 +186,18 @@ impl DirectoryData for DirectoryDataBlock{
 	}
 	
 }
+
+
+impl RawBlock {
+	fn parse_to_data(&self) -> RawDataBlock{
+		let newData : RawDataBlock;
+		newData.data = self.data[36..];
+		newData.hash = self.data[..31];
+		newData.blockPosition = self.data[32..35];
+		newData
+	}
+
+	
+}
+
+
