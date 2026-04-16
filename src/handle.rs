@@ -1,8 +1,7 @@
-use std::collections::HashMap;
-
+use std::{collections::HashMap, sync::{Arc, Mutex}};
 use log::{debug, error};
 use std::ptr;
-
+use lazy_static::lazy_static;
 
 pub struct FileHandle {
     pub path: Box<std::path::Path>,
@@ -64,4 +63,52 @@ impl HandleStorage {
 
 
 
+}
+
+
+
+
+lazy_static! {
+    static ref CURRENT_HANDLES: Arc<Mutex<HandleStorage>> = Arc::new(Mutex::new(HandleStorage::new()));
+}
+
+
+
+impl FileHandle {
+    pub fn name(&self) -> &str {
+        // Get the name, if it exists.
+        if let Some(name) = self.path.file_name() {
+            name.to_str().expect("Should be valid UTF8")
+        } else {
+            // No name, this must be the root.
+            ""
+        }
+    }
+
+
+	//this will add the handle to storage
+	//will lock
+	pub fn allocate(self) -> u128{
+		let store = &mut CURRENT_HANDLES.lock().expect("Other mutex holders should not panic.");
+		store.new_handle(self)
+	}
+
+    
+	pub fn read(number : u128) -> Self{
+		let store = &mut CURRENT_HANDLES.lock().expect("Other mutex holders should not panic.");
+		store.read_handle(number)
+	} 
+
+
+
+	pub fn drop_handle(number : u128){
+		let store = &mut CURRENT_HANDLES.lock().expect("Other mutex holders should not panic.");
+		store.remove_handle(number);
+	}
+
+	pub fn is_file(&self) -> Result<Option<bool>, c_int>{
+		let name: String = self.name().to_string();
+		//TODO 
+		Ok(Some(true)
+	}
 }
