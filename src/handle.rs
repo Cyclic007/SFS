@@ -106,9 +106,6 @@ impl FileHandle {
 		store.remove_handle(number);
 	}
 
-	pub fn is_file(&self) -> Result<Option<bool>, c_int>{
-		let name: String = self.name().to_string();
-		//TODO 
-		Ok(Some(true)
-	}
+	pub fn get_start_block_index(self) -> u
+
 }
