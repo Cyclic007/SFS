@@ -11,6 +11,8 @@ mod driveActions;
 mod blocks;
 //extern crate log;
 mod fileSystem;
+mod fileHandler;
+mod handle;
 struct ConsoleLogger;
 
 impl log::Log for ConsoleLogger {
@@ -38,9 +40,9 @@ fn main() {
         std::process::exit(-1);
     }
 
-    let filesystem =  fileSystem::SecureFileSystem {};
+    let filesystem =  fileSystem::SecureFileSystem::new(args[1].clone());
 
-    let fuse_args = [OsStr::new("-o"), OsStr::new("fsname=passthrufs")];
+    let fuse_args = [OsStr::new("-o"), OsStr::new("fsname=SFS",)];
 
-    fuse_mt::mount(fuse_mt::FuseMT::new(filesystem, 1), &args[2], &fuse_args[..]).unwrap();
+    fuse_mt::mount(fuse_mt::FuseMT::new(filesystem, 1), &args[2], &fuse_args[..]).expect("ahhh");
 }

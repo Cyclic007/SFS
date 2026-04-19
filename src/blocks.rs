@@ -1,14 +1,13 @@
-//use fuse_mt::FileAttr;
+use fuse_mt::FileAttr;
+use fuse_mt::FileType;
 //use std::io;
 //e std::error;
+use std::time::SystemTime;
+use super::driveActions::{data_block_read,start_block_read};
+use std::fs:File;
 pub struct BlockPoiner{
 	blockPosition : u32,
 }
-// pub enum Blocks{
-// 	DirectoryDataBlock = "DIR",
-// 	StartBlock = "STR",
-// 	FileDataBlock = "FIL"
-// }
 
 pub enum Types {
 	NamedPipe   = 0x00000001,
@@ -21,16 +20,73 @@ pub enum Types {
 }
 
 
+// 
+// pub struct FileAttr {Show 13 fields
+//     pub size: u64,
+//     pub blocks: u64,
+//     pub atime: SystemTime,
+//     pub mtime: SystemTime,
+//     pub ctime: SystemTime,
+//     pub crtime: SystemTime,
+//     pub kind: FileType,
+//     pub perm: u16,
+//     pub nlink: u32,
+//     pub uid: u32,
+//     pub gid: u32,
+//     pub rdev: u32,
+//     pub flags: u32,
+// }
+
+
+// 
+//     NamedPipe,
+//     CharDevice,
+//     BlockDevice,
+//     Directory,
+//     RegularFile,
+//     Symlink,
+//     Socket,
+impl From<MetaData> for FileAttr{
+	fn from(data_in : MetaData) -> Self {
+		FileAttr{
+			size : data_in.size,
+			blocks : data_in.blockLen,
+			atime: SystemTime::UNIX_EPOCH,
+			ctime: SystemTime::UNIX_EPOCH,
+			mtime: SystemTime::UNIX_EPOCH,
+			crtime: SystemTime::UNIX_EPOCH,
+			perm: data_in.perm,
+			uid : data_in.uid,
+			gid : data_in.gid,
+			kind : match data_in.fileType{
+			0b00000001 => FileType::NamedPipe,
+			0b00000010 => FileType::CharDevice,
+			0b00000100 => FileType::BlockDevice,
+			0b00001000 => FileType::Directory,
+			0b00010000 => FileType::RegularFile,
+			0b00100000 => FileType::Symlink, 
+			0b01000000 => FileType::Socket,
+			_ => FileType::Directory
+			},
+			nlink : 1,
+			rdev : 0,
+			flags : 0
+		}
+		
+	}
+}
+
+
 pub struct MetaData {
-	size : u64,
-	blockLen : u64,
-	aTime : u128,
-	mTime : u128,
-	cTime : u128,
-	perm : u16,
-	uid : u32,
-	gid : u32,
-	fileType : u8, 
+	pub size : u64,
+	pub blockLen : u64,
+	pub aTime : u128,
+	pub mTime : u128,
+	pub cTime : u128,
+	pub perm : u16,
+	pub uid : u32,
+	pub gid : u32,
+	pub fileType : u8, 
 }
 
 
@@ -55,19 +111,26 @@ pub struct RawDataBlock{
 // holds metadata for a directory
 
 // holds directory data
-pub struct DirectoryDataBlock{
-	hash : [u8; 32],
-	blockPosition : u32,
-	blockTypeId : u32,
-	blockPointers : [u32; 117],
-	nextDirectoryDataBlockPos : u32,
-}
+// pub struct DirectoryDataBlock{
+// 	pub hash : [u8; 32],
+// 	blockPosition : u32,
+// 	blockTypeId : u32,
+// 	blockPointers : [u32; 117],
+// 	nextDirectoryDataBlockPos : u32,
+// }
+
+
+
+
+
 
 
 // it is the same data for both dir and files
 pub struct StartBlock {
-	hash : [u8; 32],
-	blockPosition : u32,
+	pub hash : [u8; 32],
+	pub blockPosition : u32,
+	// 42 for directory blocks
+	// 404 for files
 	blockTypeId : u32,
 	name : [u8; 247],
 	attributes : MetaData,
@@ -82,7 +145,7 @@ pub struct StartBlock {
 
 
 pub struct DataBlock {
-	hash : [u8; 32],
+	pub hash : [u8; 32],
 	blockPosition : u32,
 	blockTypeId : u32,
 	data : [u8; 468],
@@ -95,7 +158,7 @@ pub struct DataBlock {
 
 
 //defineing methods and traits
-trait GenericBlock {
+pub trait GenericBlock {
 	fn get_block_pos(&self) -> u32;
 	fn get_block_hash(&self) -> [u8;32];
 	fn check_hash(&self) -> bool;
@@ -123,41 +186,82 @@ trait DirectoryData{
 
 
 impl StartBlock {
-	fn get_data_start_pos(&self) -> u32{
+	pub fn get_data_start_pos(&self) -> u32{
 		self.firstDataBlockPos
 	}
-	fn get_first_data_block_hash(&self) -> [u8; 32]{
+	pub fn get_first_data_block_hash(&self) -> [u8; 32]{
 		self.firstDataBlockHash
 	}
-	fn check_first_data_block_hash(&self) -> bool{
+	pub fn check_first_data_block_hash(&self) -> bool{
 		//TODO implement this
 		true
 	}
+
+	pub fn get_name(&self) -> String{
+		let name = str::from_utf8(&self.name);
+		String::from(name.unwrap())
+	}
 	
-	fn set_attributes(&mut self, newAttr : MetaData){
+	pub fn set_attributes(&mut self, newAttr : MetaData){
 		self.attributes = newAttr
 	}
+	pub fn get_attributes(self) -> MetaData{
+		self.attributes
+	}
+
+	pub fn new(hash : [u8; 32],
+		blockPosition : u32,
+		blockTypeId : u32,
+		name : [u8; 247],
+		attributes : MetaData,
+		firstDataBlockPos : u32,
+		firstDataBlockHash : [u8; 32],
+		lastDataBlockPos : u32,
+		lastDataBlockHash : [u8; 32],
+		padding : [u8; 81]) -> Self{
+			StartBlock{hash ,
+				blockPosition,
+				blockTypeId,
+				name ,
+				attributes ,
+				//attributes is 76 bytes long
+				firstDataBlockPos,
+				firstDataBlockHash,
+				lastDataBlockPos,
+				lastDataBlockHash,
+				padding}
+		}
 }
 
 
 
 
-
+impl MetaData{
+	pub fn new(
+	size : u64,
+	blockLen : u64,
+	aTime : u128,
+	mTime : u128,
+	cTime : u128,
+	perm : u16,
+	uid : u32,
+	gid : u32,
+	fileType : u8, ) -> Self{
+		Self{size,
+			blockLen ,
+			aTime ,
+			mTime ,
+			cTime ,
+			perm ,
+			uid ,
+			gid ,
+			fileType }
+		
+	}
+}
 
 //generic block implementaions
 
-impl GenericBlock for DirectoryDataBlock{
-	fn get_block_pos(&self) -> u32{
-		self.blockPosition
-	}
-	fn get_block_hash(&self) -> [u8;32]{
-		self.hash
-	}
-	fn check_hash(&self) -> bool{
-		//TODO implement hash checks
-		true
-	}
-}
 
 
 impl GenericBlock for StartBlock{
@@ -255,66 +359,120 @@ impl From<RawDataBlock> for StartBlock{
 			lastDataBlockHash : <[u8; 32]>::try_from(&data[358..390]).unwrap(), 
 			lastDataBlockPos : u32::from_le_bytes(<[u8; 4]>::try_from(&data[390..394]).unwrap()),
 
-			padding : <[u8; 81]>::try_from(&data[394..=471]).unwrap(),
+			padding : [8; 81],
 		}
 	}	
 }
 
 
-// impl From<RawDataBlock> for DirectoryDataBlock{
-// 	fn from(inBlock : RawDataBlock ) -> Self{
-// 		let data = inBlock.data;
-// 		DirectoryDataBlock{
-// 			hash : inBlock.hash,
-// 			blockPosition : inBlock.blockPosition,
-// 			blockTypeId : inBlock.blockTypeId,
-// 			blockPointers : <[u32; 117]>::try_from(<[u8;468]>::try_from(&data[..468]).unwrap()).unwrap(),
-// 			nextDataBlockPos : u32::from_le_bytes(<[u8; 4]>::try_from(&data[468..]).unwrap()),
-// 		}				
-// 	}
-// 	
-// }
-	// hash : [u8; 32],
-	// blockPosition : u32,
-	// blockTypeId : u32,
-	// blockPointers : [u32; 117],
-	// nextDirectoryDataBlockPos : u32,
 
 
+impl From<StartBlock> for RawBlock{
+	fn from(inBlock : StartBlock) -> Self{
+		let mut dataVec : Vec<u8> = vec![] ;
+		dataVec.reserve(512);
 
+		for byte in inBlock.hash{
+			dataVec.push(byte);
+		}
+		for byte in inBlock.blockPosition.to_le_bytes(){
+			dataVec.push(byte);
+		}
+		for byte in inBlock.name{
+			dataVec.push(byte);
+		}
+		for byte in inBlock.attributes.size.to_le_bytes(){
+			dataVec.push(byte);
+		}
+		for byte in inBlock.attributes.blockLen.to_le_bytes(){
+			dataVec.push(byte);
+		}
+		for byte in inBlock.attributes.aTime.to_le_bytes(){
+			dataVec.push(byte);
+		}
+		for byte in inBlock.attributes.mTime.to_le_bytes(){
+			dataVec.push(byte);
+		}
+		for byte in inBlock.attributes.cTime.to_le_bytes(){
+			dataVec.push(byte);
+		}
+		for byte in inBlock.attributes.perm.to_le_bytes(){
+			dataVec.push(byte);
+		}
+		for byte in inBlock.attributes.uid.to_le_bytes(){
+			dataVec.push(byte);
+		}
+		for byte in inBlock.attributes.gid.to_le_bytes(){
+			dataVec.push(byte);
+		}
+		dataVec.push(inBlock.attributes.fileType);
+		for byte in inBlock.firstDataBlockHash{
+			dataVec.push(byte);
+		}
+		for byte in inBlock.firstDataBlockPos.to_le_bytes(){
+			dataVec.push(byte);
+		}
+		for byte in inBlock.lastDataBlockHash{
+			dataVec.push(byte);
+		}		
+		for byte in inBlock.lastDataBlockPos.to_le_bytes(){
+			dataVec.push(byte);
+		}
+		for byte in inBlock.padding{
+			dataVec.push(byte);
+		}
+		dataVec.push(0);
+		println!("{}",dataVec.len().to_string());
+		let mut dataArr : [u8; 512] = [0;512];
+		for i in 0..512{
+			dataArr[i] = dataVec.as_slice()[i];
+		}
 
-// Data Block implemetations
-impl DataBlocks for DataBlock{
-	fn get_next_block_pos(&self) -> u32{
-		self.nextDataBlockPos
+		RawBlock{
+			data: dataArr
+		}
+
+		
+		//dataArr.push(inBlock.hash);
 	}
 }
 
 
 
-// 
-// impl DirectoryData for DirectoryDataBlock{
-// 	fn get_contents_ptrs(&self) -> [u32; 118] {
-// 		self.blockPointers
-// 	}
-// 	
-// }
+
+// Data Block implemetations
+
+impl DataBlock{
+	pub fn get_next_block_pos(&self) -> u32{
+		self.nextDataBlockPos
+	}
 
 
 
+	// This will output a vector of all of the start blocks pointed to by the data in a data block
+	pub fn parse_to_directory_ptrs(&self, file : &File) -> Vec<u32>{
+		let mut ptr_vec : Vec<u32> = Vec::with_capacity(117);
+		let mut buffer_for_bytes : [u8;4] = [0;4];
+		let data = self.data.clone();
+		let mut data_idr = data.into_iter();
+		let mut perhapsNumber : u32;
+		for _i in 0..117{
+			buffer_for_bytes[0] = data_idr.next().unwrap();
+			buffer_for_bytes[1] = data_idr.next().unwrap();
+			buffer_for_bytes[2] = data_idr.next().unwrap();
+			buffer_for_bytes[3] = data_idr.next().unwrap();
+			perhapsNumber = u32::from_le_bytes(buffer_for_bytes);
+			if perhapsNumber != 0{
+				ptr_vec.push(perhapsNumber);
+			}
+		}
+		if self.nextDataBlockPos != 0 {
+			ptr_vec.append(&mut data_block_read(&file,self.nextDataBlockPos).parse_to_directory_ptrs(file));
+		}
 
-// impl RawDataBlock {
-// 	pub fn get_data(self) -> [u8; 472]{
-// 		self.data
-// 	}	
-// }
-// 
-// 
-// impl RawBlock {
-// 	pub fn get_data(self) -> [u8; 512]{
-// 		self.data
-// 	}
-// }
+		ptr_vec
+	}
+}
 
 
 
