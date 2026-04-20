@@ -111,6 +111,11 @@ impl FileHandle {
 		store.new_handle(self)
 	}
 
+	pub fn allocate_with_index(mut self, file: File) -> u64{
+		self.start_block_index = self.clone().get_start_block_index(file);
+		self.allocate()
+	}
+
     
 	pub fn read(number : u64) -> Self{
 		let store = CURRENT_HANDLES.lock().expect("Other mutex holders should not panic.");
@@ -127,7 +132,7 @@ impl FileHandle {
 		store.remove_handle(number);
 	}
 	
-	pub fn get_start_block_index(mut self, file : File) -> u32{
+	pub fn get_start_block_index(mut self, file : &File) -> u32{
 		let mut start_block_indexes_to_check : Vec<u32> = vec!(1);
 		start_block_indexes_to_check.clear();
 		let mut data_block_indexes_to_check : Vec<u32> = vec!(1);

@@ -11,9 +11,10 @@ use std::io;
 use std::path::Path;
 use std::fs::File;
 use std::time::SystemTime;
+use std::collections::VecDeque;
 //use super::handle;
 use super::driveActions::direct_block_read;
-use super::driveActions::{direct_block_write,start_block_read,data_block_read};
+use super::driveActions::{direct_block_write,start_block_read,data_block_read,data_write,data_read,create_dir};
 use super::blocks::{RawDataBlock,RawBlock,StartBlock,DataBlock,MetaData};
 impl SecureFileSystem{
 	pub fn new( os : OsString) -> Self{
@@ -23,7 +24,23 @@ impl SecureFileSystem{
 	}
 	
 }
+// What I currently have implemented
 
+// chown
+// chmod
+// truncate
+// init
+// access (as a shell needs full impl)
+// open
+// opendir 
+// release
+// releasedir
+// readdir
+// read (in almost a 1 liner)
+// write
+// mkdir
+
+// I need to implement a total of 33 methods 
 
 impl FilesystemMT for SecureFileSystem{
 	fn init(&self, req: RequestInfo) -> ResultEmpty {
@@ -32,7 +49,7 @@ impl FilesystemMT for SecureFileSystem{
 		
 		//let _rootBlock = direct_block_read( &File::open("/").expect("SHHH"),0);
 		
-		let mut root = File::options()
+		let root = File::options()
 				    .read(true)
 				    .write(true)
 				    .open(self.target.clone()).unwrap();
@@ -53,29 +70,409 @@ impl FilesystemMT for SecureFileSystem{
 
 	fn getattr(
         &self,
-        _req: fuse_mt::RequestInfo,
+        req: fuse_mt::RequestInfo,
         path: &std::path::Path,
         fh: Option<u64>,
     ) -> fuse_mt::ResultEntry {
-	    let mut root = File::options()
-	    		    .read(true)
-	    		    .write(true)
-	    		    .open(self.target.clone()).unwrap();
-		let now = SystemTime::now();
-		let handle = FileHandle::new(Box::from(path));
-		if let Some(handleIndex) = fh{
-			println!("handle was provided");
-			Ok((
-				now.elapsed().unwrap(),
-				FileAttr::from(start_block_read(&root,FileHandle::read_handle_index(handleIndex)).get_attributes())
-			))
+
+		if self.access(req,path,2).is_err(){
+			Err(404)
 		}else {
+		    let root = File::options()
+		    		    .read(true)
+		    		    .write(true)
+		    		    .open(self.target.clone()).unwrap();
+			let now = SystemTime::now();
+			if let Some(handle_index) = fh{
+				// yay a handle already exists and I can just use that
+				println!("handle was provided");
+				Ok((
+					now.elapsed().unwrap(),
+					FileAttr::from(start_block_read(&root,FileHandle::read_handle_index(handle_index)).get_attributes())
+				))
+			}else {
+				// I need to make a new handle to get the stuff from 			
+				let handle = FileHandle::new(Box::from(path));
+				let block_pos = handle.get_start_block_index(root.try_clone().unwrap());
+
+				Ok((
+					now.elapsed().unwrap(),
+					FileAttr::from(start_block_read(&root.try_clone().unwrap(), block_pos).get_attributes()),
+				))
+				
+			}
+		}
+	}
+	// change permissions
+	fn chmod(
+        &self,
+        req: RequestInfo,
+        path: &Path,
+        fh: Option<u64>,
+        mode: u32,
+    ) -> ResultEmpty { 
+		if req.uid != 0 {
+			println!("not root user not allowed to change permissions");
+			Err(3)
+		} else if mode > 4095{
+			println!("this permission can't exist");
+			Err(3)
+
+
+		}else {
+			
+			//this means that root is changeing permissions
+			let root = File::options()
+				    		    .read(true)
+				    		    .write(true)
+				    		    .open(self.target.clone()).unwrap();
+			if let Some(handle_index) = fh{
+				// Handle is provided YAY
+				let mut current_block = start_block_read(&root.try_clone().unwrap(),FileHandle::read_handle_index(handle_index));
+				current_block.attributes.perm = mode as u16;
+				direct_block_write(&root,RawDataBlock::from(RawBlock::from(current_block)),FileHandle::read_handle_index(handle_index));
+				Ok(())
+			} else {
+				let handle = FileHandle::new(Box::from(path));
+				let block_pos = handle.get_start_block_index(root.try_clone().unwrap());
+				if block_pos == 0{
+					println!("file does not exist");
+					Err(3)
+				} else {
+					let mut current_block = start_block_read(&root.try_clone().unwrap(),block_pos);
+					current_block.attributes.perm = mode as u16;
+					direct_block_write(&root,RawDataBlock::from(RawBlock::from(current_block)),block_pos);
+					Ok(())
+				}
+			}
+		}
+    }
+
+	fn chown(
+	    &self,
+	    req: RequestInfo,
+	    path: &Path,
+	    fh: Option<u64>,
+	    uid: Option<u32>,
+	    gid: Option<u32>,
+	) -> ResultEmpty {
+		if req.uid != 0 {
+			println!("not root user not allowed to change permissions");
+			Err(3)
+		}else {
+			
+			//this means that root is changeing permissions
+			let root = File::options()
+				    		    .read(true)
+				    		    .write(true)
+				    		    .open(self.target.clone()).unwrap();
+			if let Some(handle_index) = fh{
+				// Handle is provided YAY
+				let mut current_block = start_block_read(&root.try_clone().unwrap(),FileHandle::read_handle_index(handle_index));
+
+				if let Some(new_uid) = uid {
+					// we have a new uid so we change it on the block
+					current_block.attributes.uid = new_uid;
+				}
+				if let Some(new_gid) = gid {
+					// we have a new uid so we change it on the block
+					current_block.attributes.gid = new_gid;
+				}
+				
+
+
+				direct_block_write(&root,RawDataBlock::from(RawBlock::from(current_block)),FileHandle::read_handle_index(handle_index));
+				Ok(())
+			} else {
+				let handle = FileHandle::new(Box::from(path));
+				let block_pos = handle.get_start_block_index(root.try_clone().unwrap());
+				if block_pos == 0{
+					println!("file does not exist");
+					Err(3)
+				} else {
+					let mut current_block = start_block_read(&root.try_clone().unwrap(),block_pos);
+					if let Some(new_uid) = uid {
+						// we have a new uid so we change it on the block
+						current_block.attributes.uid = new_uid;
+					}
+					if let Some(new_gid) = gid {
+						// we have a new uid so we change it on the block
+						current_block.attributes.gid = new_gid;
+					}
+				
+
+					direct_block_write(&root,RawDataBlock::from(RawBlock::from(current_block)),block_pos);
+					Ok(())
+				}
+			}
+		}
+		
+	}
+
+
+	// my handler Q
+	// This message will self destruct in 30 seconds
+	fn open(&self, _req: RequestInfo, path: &Path, flags: u32) -> ResultOpen {
+		let root = File::options()
+   		    .read(true)
+   		    .write(true)
+   		    .open(self.target.clone()).unwrap();
+		let handle = FileHandle::new(Box::from(path));		
+		if handle.clone().get_start_block_index(root.try_clone().unwrap()) == 0 {
+			println!("file does not exist big sad ");
+			Err(404)
+		} else {
+			Ok((
+				handle.allocate_with_index(root.try_clone().unwrap()),
+				flags
+			))
+		}
+		
+	}
+	fn opendir(
+        &self,
+        _req: RequestInfo,
+        path: &Path,
+        flags: u32,
+    ) -> ResultOpen {
+    	let root = File::options()
+   		    .read(true)
+   		    .write(true)
+   		    .open(self.target.clone()).unwrap();
+		let handle = FileHandle::new(Box::from(path));		
+		if handle.clone().get_start_block_index(root.try_clone().unwrap()) == 0 {
+			println!("file does not exist big sad ");
+			Err(404)
+		} else {
+			Ok((
+				handle.allocate_with_index(root.try_clone().unwrap()),
+				flags
+			))
+		}
+    }
+	// Bonds name
+	// james name
+	// Jams Bonde is Haveinf a Stronk
+	fn release(
+        &self,
+        req: RequestInfo,
+        path: &Path,
+        fh: u64,
+        _flags: u32,
+        lock_owner: u64,
+        flush: bool,
+    ) -> ResultEmpty {
+		if flush {
+			let _res  = self.flush(req,path,fh,lock_owner);
+		}	
+		FileHandle::drop_handle(fh);
+		Ok(())
+	}
+    fn releasedir(
+        &self,
+        _req: RequestInfo,
+        _path: &Path,
+        fh: u64,
+        _flags: u32,
+    ) -> ResultEmpty {
+    	FileHandle::drop_handle(fh);
+    	Ok(())
+    }
+
+
+
+
+	
+
+	fn truncate(
+        &self,
+        req: RequestInfo,
+        path: &Path,
+        fh: Option<u64>,
+        size: u64,
+    ) -> ResultEmpty { 
+		if self.access(req,path,2).is_err(){
+			Err(404)	
+		}else {
+			
+			//this means that root is changeing permissions
+			let root = File::options()
+				    		    .read(true)
+				    		    .write(true)
+				    		    .open(self.target.clone()).unwrap();
+			if let Some(handle_index) = fh{
+				// Handle is provided YAY
+				let mut current_block = start_block_read(&root.try_clone().unwrap(),FileHandle::read_handle_index(handle_index));
+				current_block.attributes.size = size;
+				direct_block_write(&root,RawDataBlock::from(RawBlock::from(current_block)),FileHandle::read_handle_index(handle_index));
+				Ok(())
+			} else {
+				let handle = FileHandle::new(Box::from(path));
+				let block_pos = handle.get_start_block_index(root.try_clone().unwrap());
+				if block_pos == 0{
+					println!("file does not exist");
+					Err(3)
+				} else {
+					let mut current_block = start_block_read(&root.try_clone().unwrap(),block_pos);
+					current_block.attributes.size = size;
+					direct_block_write(&root,RawDataBlock::from(RawBlock::from(current_block)),block_pos);
+					Ok(())
+				}
+			}
+		}	
+
+    }
+
+
+	//TODO finish implemtation	
+	fn access(
+		&self,
+		req: RequestInfo, 
+		path: &Path, 
+		mask: u32
+	) -> ResultEmpty {
+		if req.uid == 0 {
+			println!("this is root");
+			Ok(())
+		} else {
+			let root = File::options()
+    		    .read(true)
+    		    .write(true)
+    		    .open(self.target.clone()).unwrap();
+			let handle = FileHandle::new(Box::from(path));
+			let block_pos = handle.get_start_block_index(root.try_clone().unwrap());
+			if block_pos == 0 {
+				println!("file does not exist");
+				Err(3)
+			} else {
+				println!("{}",mask);
+				Ok(())
+			}
+			
+						
 			
 		}
 
-		
-						
+	
+
 	}
+
+
+	// they read me like a book
+	// and they played you like the cheap kazoo you are
+
+	// this needs to get all of the names of the items in the direcory storage
+	fn readdir(&self, req: RequestInfo, path: &Path, fh: u64) -> ResultReaddir{
+		if self.access(req,path,4).is_err(){
+			Err(404)	
+		}else{
+			let root = File::options()
+			    		    .read(true)
+			    		    .write(true)
+			    		    .open(self.target.clone()).unwrap();
+			let mut directory_ptrs : Vec<u32> = vec!(0,0);
+			directory_ptrs.clear();
+			let handle = FileHandle::read(fh);
+			let start_block = start_block_read(&root.try_clone().unwrap(),handle.clone().get_start_block_index(root.try_clone().unwrap()));
+			Ok(data_block_read(&root,start_block.get_data_start_pos()).parse_directory_to_directory_entry_struct_vector(&root,handle.clone()))
+			
+			
+		}
+		
+	}
+	fn read(
+        &self,
+        req: RequestInfo,
+        path: &Path,
+        fh: u64,
+        offset: u64,
+        size: u32,
+        callback: impl FnOnce(ResultSlice<'_>) -> CallbackResult,
+    ) -> CallbackResult {
+    	if self.access(req,path,4).is_err(){
+			callback(Err(404))	
+		}else{
+			let root = File::options()
+    		    .read(true)
+    		    .write(true)
+    		    .open(self.target.clone()).unwrap();
+			let block_offset : u32= u32::try_from(offset/468).unwrap();
+			let inner_block_offset : usize  = usize::try_from(offset%468).unwrap();
+			let start_block = start_block_read(&root.try_clone().unwrap(), FileHandle::read_handle_index(fh));
+			//you know it's bad when you need to break a function call into multible lines
+			callback(
+				Ok(
+					&data_read(
+						&root.try_clone().unwrap(),
+						data_block_read(&root.try_clone().unwrap(),start_block.get_data_start_pos()).get_data_block_pos_from_block_offset(
+							&root.try_clone().unwrap(),
+							block_offset
+						),
+						usize::try_from(size).unwrap(),
+						match size{
+							0..468 => usize::try_from(size).unwrap(),
+							_ => 468
+						},
+						inner_block_offset
+								
+					)[..]
+				)
+			)
+		}	
+    }
+
+
+
+	
+    
+
+	// I am a Published Author
+	// --Doug Doug
+	fn write(
+	    &self,
+	    req: RequestInfo,
+	    path: &Path,
+	    fh: u64,
+	    offset: u64,
+	    data: Vec<u8>,
+	    _flags: u32,
+	) -> ResultWrite {
+		if self.access(req,path,4).is_err(){
+			Err(404)	
+		}else{
+			let root = File::options()
+    		    .read(true)
+    		    .write(true)
+    		    .open(self.target.clone()).unwrap();
+			Ok(data_write(&root,VecDeque::from(data.clone()),usize::try_from(offset).unwrap(),data.len(),FileHandle::read_handle_index(fh),5000,468,0))
+			
+		} 		
+	}	
+
+
+	fn mkdir(
+	    &self,
+	    req: RequestInfo,
+	    parent: &Path,
+	    name: &OsStr,
+	    mode: u32,
+	) -> ResultEntry {
+		if self.access(req,parent,4).is_err(){
+			Err(404)	
+		}else{
+			let now = SystemTime::now();
+
+			let tempHandle = FileHandle::new(Box::from(parent));
+			let root = File::options()
+    		    .read(true)
+    		    .write(true)
+    		    .open(self.target.clone()).unwrap();
+    		    
+			Ok((now.elapsed().unwrap(),FileAttr::from(create_dir(&root, name.to_os_string(), mode, tempHandle.get_start_block_index(&root),req.uid,req.gid))))
+		}			
+	}
+
+//pub fn create_dir(driveFile : &File, name : OsString, mode : u32, parent_start_index : u32, uid : u32, gid : u32) -> MetaData{
 	
 }	
 

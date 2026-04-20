@@ -1,10 +1,12 @@
-use fuse_mt::FileAttr;
-use fuse_mt::FileType;
+use fuse_mt::{FileAttr,FileType,DirectoryEntry};
+
+use std::ffi::OsString;
 //use std::io;
 //e std::error;
 use std::time::SystemTime;
 use super::driveActions::{data_block_read,start_block_read};
-use std::fs:File;
+use std::fs::File;
+use super::handle::FileHandle;
 pub struct BlockPoiner{
 	blockPosition : u32,
 }
@@ -76,7 +78,7 @@ impl From<MetaData> for FileAttr{
 	}
 }
 
-
+#[derive(Clone)]
 pub struct MetaData {
 	pub size : u64,
 	pub blockLen : u64,
@@ -133,7 +135,7 @@ pub struct StartBlock {
 	// 404 for files
 	blockTypeId : u32,
 	name : [u8; 247],
-	attributes : MetaData,
+	pub attributes : MetaData,
 	//attributes is 76 bytes long
 	firstDataBlockPos : u32,
 	firstDataBlockHash : [u8; 32],
@@ -143,13 +145,13 @@ pub struct StartBlock {
 
 }
 
-
+#[derive(Clone)]
 pub struct DataBlock {
 	pub hash : [u8; 32],
-	blockPosition : u32,
+	pub blockPosition : u32,
 	blockTypeId : u32,
 	data : [u8; 468],
-	nextDataBlockPos : u32,
+	pub nextDataBlockPos : u32,
 }
 
 
@@ -258,17 +260,23 @@ impl MetaData{
 			fileType }
 		
 	}
+
+
+
+
+
+
 }
 
 //generic block implementaions
 
 
 
-impl GenericBlock for StartBlock{
-	fn get_block_pos(&self) -> u32{
+impl StartBlock{
+	pub fn get_block_pos(&self) -> u32{
 		self.blockPosition
 	}
-	fn get_block_hash(&self) -> [u8;32]{
+	pub fn get_block_hash(&self) -> [u8;32]{
 		self.hash
 	}
 	fn check_hash(&self) -> bool{
@@ -333,6 +341,29 @@ impl From<RawDataBlock> for DataBlock{
 		}	
 	}	
 }
+impl From<DataBlock> for RawDataBlock{
+	fn from(inBlock : DataBlock) -> Self{
+
+		let whole_data : [u8;472] = {
+			let mut whole = [0;472];
+			let (one, two) = whole.split_at_mut(inBlock.data.len());
+			one.copy_from_slice(&inBlock.data);
+			two.copy_from_slice(&inBlock.nextDataBlockPos.to_le_bytes());
+			whole
+		};
+		RawDataBlock{
+			hash : inBlock.hash,
+			blockPosition : inBlock.blockPosition,
+			blockTypeId : inBlock.blockTypeId,
+			data : whole_data 
+			
+		}
+	}
+}
+
+
+
+
 
 impl From<RawDataBlock> for StartBlock{
 	fn from(inBlock : RawDataBlock ) -> Self{
@@ -446,8 +477,30 @@ impl DataBlock{
 	pub fn get_next_block_pos(&self) -> u32{
 		self.nextDataBlockPos
 	}
+	pub fn new(
+		hash : [u8; 32],
+		blockPosition : u32,
+		blockTypeId : u32,
+		data : [u8; 468],
+		nextDataBlockPos : u32,) -> Self{
+			DataBlock{
+				hash,
+				blockPosition,
+				blockTypeId,
+				data,
+				nextDataBlockPos
+			}
+		}
 
 
+	pub fn set_data(&mut self, data : [u8;468]){
+		self.data = data;
+	} 
+
+
+	pub fn set_next_block_pos(&mut self,pos : u32){
+		self.nextDataBlockPos = pos;
+	}
 
 	// This will output a vector of all of the start blocks pointed to by the data in a data block
 	pub fn parse_to_directory_ptrs(&self, file : &File) -> Vec<u32>{
@@ -472,7 +525,60 @@ impl DataBlock{
 
 		ptr_vec
 	}
-}
+
+	pub fn parse_to_full_data(&self, file : &File) -> Vec<u8>{
+		let mut data_vec : Vec<u8> = Vec::with_capacity(1028);
+		data_vec.append(&mut self.data.to_vec());
+		if self.nextDataBlockPos != 0 {
+			data_vec.append(&mut data_block_read(&file,self.nextDataBlockPos).parse_to_full_data(file));
+		}
+		data_vec
+	}
+
+	// my function names just roll of the tongue
+	pub fn get_data_block_pos_from_block_offset(&self, file : &File, block_offset : u32) -> u32{
+		if block_offset == 0{
+			self.blockPosition
+		} else {
+			if self.nextDataBlockPos == 0{
+				0
+			}else {
+				return data_block_read(&file, self.nextDataBlockPos).get_data_block_pos_from_block_offset(&file,block_offset-1)
+			}
+		}
+	}
+	pub fn get_data(self) -> [u8;468] {
+		return self.data
+	}
+
+
+
+	pub fn parse_directory_to_directory_entry_struct_vector(&self, file : &File, _handle : FileHandle) -> Vec<DirectoryEntry>{
+		let directory_ptr_vec = self.parse_to_directory_ptrs(file);
+		let mut directory_entry_vec : Vec<DirectoryEntry> = Vec::with_capacity(117);
+		for ptr in directory_ptr_vec{
+			let block_in_question = start_block_read(&file, ptr);
+			directory_entry_vec.push(
+					DirectoryEntry{
+						name : OsString::from(String::from_utf8(block_in_question.name.to_vec()).unwrap()),
+						kind : match block_in_question.attributes.fileType {
+									0b00000001 => FileType::NamedPipe,
+									0b00000010 => FileType::CharDevice,
+									0b00000100 => FileType::BlockDevice,
+									0b00001000 => FileType::Directory,
+									0b00010000 => FileType::RegularFile,
+									0b00100000 => FileType::Symlink, 
+									0b01000000 => FileType::Socket,
+									_ => FileType::Directory
+								}
+					}
+				)
+			}
+			directory_entry_vec
+		}
+	}
+
+
 
 
 
