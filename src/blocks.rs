@@ -199,9 +199,16 @@ impl StartBlock {
 		true
 	}
 
-	pub fn get_name(&self) -> String{
-		let name = str::from_utf8(&self.name);
-		String::from(name.unwrap())
+	pub fn get_name(&self) -> OsString{
+		let unparsed_name = self.name.to_vec();
+		let mut magic_vec : Vec<u8> = Vec::with_capacity(247);
+		for i in unparsed_name{
+			if i != 0{
+				magic_vec.push(i);
+			}
+		}
+		
+		return OsString::from(String::from_utf8(magic_vec).unwrap())
 	}
 	
 	pub fn set_attributes(&mut self, newAttr : MetaData){
@@ -506,23 +513,25 @@ impl DataBlock{
 	pub fn parse_to_directory_ptrs(&self, file : &File) -> Vec<u32>{
 		let mut ptr_vec : Vec<u32> = Vec::with_capacity(117);
 		let mut buffer_for_bytes : [u8;4] = [0;4];
-		let data = self.data.clone();
+		let data = self.data;
 		let mut data_idr = data.into_iter();
-		let mut perhapsNumber : u32;
-		for _i in 0..117{
+		let mut perhaps_number : u32;
+		for _i in 0..116{
 			buffer_for_bytes[0] = data_idr.next().unwrap();
 			buffer_for_bytes[1] = data_idr.next().unwrap();
 			buffer_for_bytes[2] = data_idr.next().unwrap();
 			buffer_for_bytes[3] = data_idr.next().unwrap();
-			perhapsNumber = u32::from_le_bytes(buffer_for_bytes);
-			if perhapsNumber != 0{
-				ptr_vec.push(perhapsNumber);
+			perhaps_number = u32::from_le_bytes(buffer_for_bytes);
+			if perhaps_number != 0{
+				ptr_vec.push(perhaps_number);
 			}
 		}
-		if self.nextDataBlockPos != 0 {
-			ptr_vec.append(&mut data_block_read(&file,self.nextDataBlockPos).parse_to_directory_ptrs(file));
-		}
-
+		
+		
+		// if self.nextDataBlockPos != u32::MAX {
+		// 	ptr_vec.append(&mut data_block_read(file,self.nextDataBlockPos).parse_to_directory_ptrs(file));
+		// }
+		 
 		ptr_vec
 	}
 
@@ -556,11 +565,15 @@ impl DataBlock{
 	pub fn parse_directory_to_directory_entry_struct_vector(&self, file : &File, _handle : FileHandle) -> Vec<DirectoryEntry>{
 		let directory_ptr_vec = self.parse_to_directory_ptrs(file);
 		let mut directory_entry_vec : Vec<DirectoryEntry> = Vec::with_capacity(117);
+
 		for ptr in directory_ptr_vec{
+
 			let block_in_question = start_block_read(&file, ptr);
+
+			let parsed_name = block_in_question.name.to_vec().extract_if(..,|x| *x == 0).collect::<Vec<_>>();
 			directory_entry_vec.push(
 					DirectoryEntry{
-						name : OsString::from(String::from_utf8(block_in_question.name.to_vec()).unwrap()),
+						name : OsString::from(String::from_utf8(parsed_name).unwrap()),
 						kind : match block_in_question.attributes.fileType {
 									0b00000001 => FileType::NamedPipe,
 									0b00000010 => FileType::CharDevice,

@@ -58,7 +58,8 @@ impl FilesystemMT for SecureFileSystem{
 		let root_start_block = StartBlock::from(RawDataBlock::from(root_block));
 		if root_start_block.hash == [0; 32]{
 			println!("the file system is new");
-			direct_block_write(&root,RawDataBlock::from(RawBlock::from(StartBlock::new([0;32],0,42,[0;247],MetaData::new(512,1,0,0,0,9,req.uid,req.gid,0),1,[0;32],2,[0;32],[0;81]))),0);
+			create_dir(&root, OsString::from("/"), 551, 0 ,req.uid,req.gid);
+//			direct_block_write(&root,RawDataBlock::from(RawBlock::from(StartBlock::new([0;32],0,42,[0;247],MetaData::new(512,1,0,0,0,9,req.uid,req.gid,0),1,[0;32],2,[0;32],[0;81]))),0);
 			println!("made new root block");
 		} 
 
@@ -93,7 +94,7 @@ impl FilesystemMT for SecureFileSystem{
 			}else {
 				// I need to make a new handle to get the stuff from 			
 				let handle = FileHandle::new(Box::from(path));
-				let block_pos = handle.get_start_block_index(root.try_clone().unwrap());
+				let block_pos = handle.get_start_block_index(&root.try_clone().unwrap());
 
 				Ok((
 					now.elapsed().unwrap(),
@@ -134,7 +135,7 @@ impl FilesystemMT for SecureFileSystem{
 				Ok(())
 			} else {
 				let handle = FileHandle::new(Box::from(path));
-				let block_pos = handle.get_start_block_index(root.try_clone().unwrap());
+				let block_pos = handle.get_start_block_index(&root.try_clone().unwrap());
 				if block_pos == 0{
 					println!("file does not exist");
 					Err(3)
@@ -185,7 +186,7 @@ impl FilesystemMT for SecureFileSystem{
 				Ok(())
 			} else {
 				let handle = FileHandle::new(Box::from(path));
-				let block_pos = handle.get_start_block_index(root.try_clone().unwrap());
+				let block_pos = handle.get_start_block_index(&root.try_clone().unwrap());
 				if block_pos == 0{
 					println!("file does not exist");
 					Err(3)
@@ -218,7 +219,7 @@ impl FilesystemMT for SecureFileSystem{
    		    .write(true)
    		    .open(self.target.clone()).unwrap();
 		let handle = FileHandle::new(Box::from(path));		
-		if handle.clone().get_start_block_index(root.try_clone().unwrap()) == 0 {
+		if handle.clone().get_start_block_index(&root.try_clone().unwrap()) == 0 {
 			println!("file does not exist big sad ");
 			Err(404)
 		} else {
@@ -240,10 +241,12 @@ impl FilesystemMT for SecureFileSystem{
    		    .write(true)
    		    .open(self.target.clone()).unwrap();
 		let handle = FileHandle::new(Box::from(path));		
-		if handle.clone().get_start_block_index(root.try_clone().unwrap()) == 0 {
+		if handle.clone().get_start_block_index(&root.try_clone().unwrap()) == u32::MAX {
 			println!("file does not exist big sad ");
 			Err(404)
 		} else {
+			println!("directory is being opened");
+			// you have opened the crypt and got cursed
 			Ok((
 				handle.allocate_with_index(root.try_clone().unwrap()),
 				flags
@@ -308,7 +311,7 @@ impl FilesystemMT for SecureFileSystem{
 				Ok(())
 			} else {
 				let handle = FileHandle::new(Box::from(path));
-				let block_pos = handle.get_start_block_index(root.try_clone().unwrap());
+				let block_pos = handle.get_start_block_index(&root.try_clone().unwrap());
 				if block_pos == 0{
 					println!("file does not exist");
 					Err(3)
@@ -340,7 +343,7 @@ impl FilesystemMT for SecureFileSystem{
     		    .write(true)
     		    .open(self.target.clone()).unwrap();
 			let handle = FileHandle::new(Box::from(path));
-			let block_pos = handle.get_start_block_index(root.try_clone().unwrap());
+			let block_pos = handle.get_start_block_index(&root.try_clone().unwrap());
 			if block_pos == 0 {
 				println!("file does not exist");
 				Err(3)
@@ -372,8 +375,9 @@ impl FilesystemMT for SecureFileSystem{
 			    		    .open(self.target.clone()).unwrap();
 			let mut directory_ptrs : Vec<u32> = vec!(0,0);
 			directory_ptrs.clear();
+			println!("directory is being read");
 			let handle = FileHandle::read(fh);
-			let start_block = start_block_read(&root.try_clone().unwrap(),handle.clone().get_start_block_index(root.try_clone().unwrap()));
+			let start_block = start_block_read(&root.try_clone().unwrap(),handle.clone().get_start_block_index(&root.try_clone().unwrap()));
 			Ok(data_block_read(&root,start_block.get_data_start_pos()).parse_directory_to_directory_entry_struct_vector(&root,handle.clone()))
 			
 			
@@ -447,7 +451,7 @@ impl FilesystemMT for SecureFileSystem{
 			Ok(data_write(&root,VecDeque::from(data.clone()),usize::try_from(offset).unwrap(),data.len(),FileHandle::read_handle_index(fh),5000,468,0))
 			
 		} 		
-	}	
+	}
 
 
 	fn mkdir(
@@ -461,13 +465,15 @@ impl FilesystemMT for SecureFileSystem{
 			Err(404)	
 		}else{
 			let now = SystemTime::now();
-
+			println!("attempting to create directory at {}",parent.to_str().expect("unable to parse parent path to str"));    		    
+			
+			
 			let tempHandle = FileHandle::new(Box::from(parent));
 			let root = File::options()
     		    .read(true)
     		    .write(true)
-    		    .open(self.target.clone()).unwrap();
-    		    
+    		    .open(self.target.clone()).expect("unable to open file");
+
 			Ok((now.elapsed().unwrap(),FileAttr::from(create_dir(&root, name.to_os_string(), mode, tempHandle.get_start_block_index(&root),req.uid,req.gid))))
 		}			
 	}
