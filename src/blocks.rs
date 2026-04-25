@@ -12,13 +12,13 @@ pub struct BlockPoiner{
 }
 
 pub enum Types {
-	NamedPipe   = 0x00000001,
-    CharDevice  = 0x00000010,
-    BlockDevice = 0x00000100,
-    Directory   = 0x00001000,
-    RegularFile = 0x00010000,
-    Symlink     = 0x00100000, 
-    Socket      = 0x01000000,
+	NamedPipe   = 0b00000001,
+    CharDevice  = 0b00000010,
+    BlockDevice = 0b00000100,
+    Directory   = 0b00001000,
+    RegularFile = 0b00010000,
+    Symlink     = 0b00100000, 
+    Socket      = 0b01000000,
 }
 
 
@@ -61,13 +61,13 @@ impl From<MetaData> for FileAttr{
 			uid : data_in.uid,
 			gid : data_in.gid,
 			kind : match data_in.fileType{
-			0b00000001 => FileType::NamedPipe,
-			0b00000010 => FileType::CharDevice,
-			0b00000100 => FileType::BlockDevice,
-			0b00001000 => FileType::Directory,
-			0b00010000 => FileType::RegularFile,
-			0b00100000 => FileType::Symlink, 
-			0b01000000 => FileType::Socket,
+			1 => FileType::NamedPipe,
+			2 => FileType::CharDevice,
+			4 => FileType::BlockDevice,
+			8 => FileType::Directory,
+			16 => FileType::RegularFile,
+			32 => FileType::Symlink, 
+			64 => FileType::Socket,
 			_ => FileType::Directory
 			},
 			nlink : 1,
@@ -128,34 +128,298 @@ pub struct RawDataBlock{
 
 
 // it is the same data for both dir and files
+#[derive(Clone)]
 pub struct StartBlock {
-	pub hash : [u8; 32],
-	pub blockPosition : u32,
-	// 42 for directory blocks
-	// 404 for files
-	blockTypeId : u32,
-	name : [u8; 247],
-	pub attributes : MetaData,
-	//attributes is 76 bytes long
-	firstDataBlockPos : u32,
-	firstDataBlockHash : [u8; 32],
-	lastDataBlockPos : u32,
-	lastDataBlockHash : [u8; 32],
-	padding : [u8; 81]
-
+	pub hash : [u8; 32], 			// 000 - 01F
+	pub blockPosition : u32, 		// 020 - 023
+	pub blockTypeId : u32,				// 024 - 027
+	name : [u8; 128],				// 038 - 0A7
+	pub attributes : MetaData,		// 0A8 - 0F2
+	// padding 						// 0F3 - 0FF
+	firstDataBlockPos : u32,		// 100 - 104
+	// padding 						// 105 - 10F
+	firstDataBlockHash : [u8; 32],	// 110 - 12F
+	lastDataBlockPos : u32,			// 130 - 134
+	// padding						// 135 - 13F
+	lastDataBlockHash : [u8; 32],	// 140 - 15F
+	// padding						// 160 - 1FF
 }
+
+impl From<StartBlock> for RawBlock{
+	fn from(in_block : StartBlock) -> Self{
+		let mut data_vec : Vec<u8> = Vec::with_capacity(512);
+		for byte in in_block.hash{
+			data_vec.push(byte);
+		}
+		for byte in in_block.blockPosition.to_le_bytes(){
+			data_vec.push(byte);
+		}
+		for byte in in_block.blockTypeId.to_le_bytes(){
+			data_vec.push(byte);
+		}
+		for byte in in_block.name{
+			data_vec.push(byte);
+		}
+		for byte in in_block.attributes.size.to_le_bytes(){
+			data_vec.push(byte);
+		}
+		for byte in in_block.attributes.blockLen.to_le_bytes(){
+			data_vec.push(byte);
+		}
+		for byte in in_block.attributes.uid.to_le_bytes(){
+			data_vec.push(byte);
+		}
+		for byte in in_block.attributes.gid.to_le_bytes(){
+			data_vec.push(byte);
+		}
+		for byte in in_block.attributes.aTime.to_le_bytes(){
+			data_vec.push(byte);
+		}
+		for byte in in_block.attributes.mTime.to_le_bytes(){
+			data_vec.push(byte);
+		}		
+		for byte in in_block.attributes.cTime.to_le_bytes(){
+			data_vec.push(byte);
+		}
+		for byte in in_block.attributes.perm.to_le_bytes(){
+			data_vec.push(byte);
+		}
+		for byte in in_block.attributes.fileType.to_le_bytes(){
+			data_vec.push(byte);
+		}
+		for _i in 0..13{
+			data_vec.push(0);
+		}
+		for byte in in_block.firstDataBlockPos.to_le_bytes(){
+			data_vec.push(byte);
+		}
+		for _i in 0..12{
+			data_vec.push(0);
+		}
+		for byte in in_block.firstDataBlockHash{
+			data_vec.push(byte);
+		}
+		for byte in in_block.firstDataBlockPos.to_le_bytes(){
+			data_vec.push(byte);
+		}
+		for _i in 0..12{
+			data_vec.push(0);
+		}
+		for byte in in_block.firstDataBlockHash{
+			data_vec.push(byte);
+		}
+		for _i in 0..160{
+			data_vec.push(0);
+		}
+		let mut data_arr : [u8;512] = [0;512];
+		for i in 0..512{
+			data_arr[i] = data_vec[i];
+		}
+		RawBlock{
+			data : data_arr,
+		}
+	}
+}
+
+
+
+impl From<RawBlock> for StartBlock{
+	fn from(in_block : RawBlock) -> Self{
+		let data = in_block.data;
+		StartBlock{
+			hash : 				<[u8;32]>::try_from(&data[0..=31]).expect("the data array is haveing issues"),
+			blockPosition : 	u32::from_le_bytes(<[u8;4]>::try_from(&data[32 ..= 35]).unwrap()),
+			blockTypeId :		u32::from_le_bytes(<[u8;4]>::try_from(&data[36 ..= 39]).unwrap()),
+			name : 				<[u8; 128]>::try_from(&data[40..=167]).unwrap(),
+			// Metadata 168..=274	
+			attributes:			MetaData {
+				size :			u64::from_le_bytes(<[u8;8]>::try_from(&data[168 ..= 175]).unwrap()),
+				blockLen :		u64::from_le_bytes(<[u8;8]>::try_from(&data[176 ..= 183]).unwrap()),
+				uid : 			u32::from_le_bytes(<[u8;4]>::try_from(&data[184 ..= 187]).unwrap()),
+				gid :			u32::from_le_bytes(<[u8;4]>::try_from(&data[188 ..= 191]).unwrap()),
+				aTime : 		u128::from_le_bytes(<[u8;16]>::try_from(&data[192 ..= 207]).unwrap()),
+				mTime : 		u128::from_le_bytes(<[u8;16]>::try_from(&data[208 ..= 223]).unwrap()),
+				cTime : 		u128::from_le_bytes(<[u8;16]>::try_from(&data[224 ..= 239]).unwrap()),
+				perm :			u16::from_le_bytes(<[u8;2]>::try_from(&data[240 ..= 241]).unwrap()),
+				fileType : 		data[242]
+			},
+			firstDataBlockPos:	u32::from_le_bytes(<[u8;4]>::try_from(&data[256 ..= 259]).unwrap()),
+			firstDataBlockHash:	<[u8;32]>::try_from(&data[272..=303]).expect("the data array is haveing issues"),
+			lastDataBlockPos:	u32::from_le_bytes(<[u8;4]>::try_from(&data[304 ..= 307]).unwrap()),
+			lastDataBlockHash:	<[u8;32]>::try_from(&data[320..=351]).expect("the data array is haveing issues")
+
+		}
+	}
+}
+
+impl From<StartBlock> for RawDataBlock{
+	fn from(in_block : StartBlock) -> Self{
+		let mut data_vec : Vec<u8> = Vec::with_capacity(472);
+		for byte in in_block.name{
+			data_vec.push(byte);
+		}
+		for byte in in_block.attributes.size.to_le_bytes(){
+			data_vec.push(byte);
+		}
+		for byte in in_block.attributes.blockLen.to_le_bytes(){
+			data_vec.push(byte);
+		}
+		for byte in in_block.attributes.uid.to_le_bytes(){
+			data_vec.push(byte);
+		}
+		for byte in in_block.attributes.gid.to_le_bytes(){
+			data_vec.push(byte);
+		}
+		for byte in in_block.attributes.aTime.to_le_bytes(){
+			data_vec.push(byte);
+		}
+		for byte in in_block.attributes.mTime.to_le_bytes(){
+			data_vec.push(byte);
+		}		
+		for byte in in_block.attributes.cTime.to_le_bytes(){
+			data_vec.push(byte);
+		}
+		for byte in in_block.attributes.perm.to_le_bytes(){
+			data_vec.push(byte);
+		}
+		for byte in in_block.attributes.fileType.to_le_bytes(){
+			data_vec.push(byte);
+		}
+		for _i in 0..13{
+			data_vec.push(0);
+		}
+		for byte in in_block.firstDataBlockPos.to_le_bytes(){
+			data_vec.push(byte);
+		}
+		for _i in 0..12{
+			data_vec.push(0);
+		}
+		for byte in in_block.firstDataBlockHash{
+			data_vec.push(byte);
+		}
+		for byte in in_block.firstDataBlockPos.to_le_bytes(){
+			data_vec.push(byte);
+		}
+		for _i in 0..12{
+			data_vec.push(0);
+		}
+		for byte in in_block.firstDataBlockHash{
+			data_vec.push(byte);
+		}
+		for _i in 0..160{
+			data_vec.push(0);
+		}
+			
+		let mut data_arr : [u8;472] = [0;472];
+		for i in 0..472{
+			data_arr[i] = data_vec[i];
+		}
+
+		RawDataBlock{
+			hash: in_block.hash,
+			blockPosition: in_block.blockPosition,
+			blockTypeId: in_block.blockTypeId,
+			data: data_arr
+		}
+		
+		
+	}
+}
+
+
+
 
 #[derive(Clone)]
 pub struct DataBlock {
-	pub hash : [u8; 32],
-	pub blockPosition : u32,
-	blockTypeId : u32,
-	data : [u8; 468],
-	pub nextDataBlockPos : u32,
+	pub hash : [u8; 32],			// 000 - 01F
+	// padding						// 028 - 02F
+	pub blockPosition : u32,		// 020 - 023
+	blockTypeId : u32,				// 024 - 027
+	data : [u8; 448],				// 030 - 1EF
+	//padding						// 1F0 - 1FB
+	pub nextDataBlockPos : u32,		// 1FC - 1FF
 }
 
 
+impl From<RawBlock> for DataBlock{
+	fn from(in_block : RawBlock) -> Self{
+		let data = in_block.data;
+		DataBlock{
+			hash : 				<[u8;32]>::try_from(&data[0..=31]).expect("the data array is haveing issues"),
+			blockPosition : 	u32::from_le_bytes(<[u8;4]>::try_from(&data[32 ..= 35]).expect("block pos is not parseing correct")),
+			blockTypeId :		u32::from_le_bytes(<[u8;4]>::try_from(&data[36 ..= 39]).expect("block type ID is not parseing correct")),
+			data : 				<[u8;448]>::try_from(&data[48..=495]).expect("the data array is haveing issues"),
+			nextDataBlockPos :	u32::from_le_bytes(<[u8;4]>::try_from(&data[508 ..= 511]).expect("next block pos is not parseing correct"))
+		}
+	}
+}
 
+impl From<DataBlock> for RawBlock{
+	fn from(in_block: DataBlock)-> Self{
+		let mut data_vec : Vec<u8> = Vec::with_capacity(512);
+		for byte in in_block.hash{
+			data_vec.push(byte);
+		}
+		for byte in in_block.blockPosition.to_le_bytes(){
+			data_vec.push(byte);
+		}
+		for byte in in_block.blockTypeId.to_le_bytes(){
+			data_vec.push(byte);
+		}
+		for _i in 0..8{
+			data_vec.push(0);
+		}
+		for byte in in_block.data{
+			data_vec.push(byte);
+		}
+		for _i in 0..12{
+			data_vec.push(0);
+		}
+		for byte in in_block.nextDataBlockPos.to_le_bytes(){
+			data_vec.push(byte);
+		}
+
+		let mut data_arr : [u8;512] = [0;512];
+		for i in 0..512{
+			data_arr[i] = data_vec[i];
+		}
+		RawBlock{
+			data : data_arr,
+		}
+		
+		
+	}
+}
+
+
+impl From<DataBlock> for RawDataBlock{
+	fn from(in_block : DataBlock) -> Self{
+		let mut data_vec : Vec<u8> = Vec::with_capacity(472);
+		for _i in 0..8{
+			data_vec.push(0);
+		}
+		for byte in in_block.data{
+			data_vec.push(byte);
+		}
+		for _i in 0..12{
+			data_vec.push(0);
+		}
+		for byte in in_block.nextDataBlockPos.to_le_bytes(){
+			data_vec.push(byte);
+		}
+		let mut data_arr : [u8;472] = [0;472];
+		for i in 0..472{
+			data_arr[i] = data_vec[i];
+		}
+		RawDataBlock{
+			hash: in_block.hash,
+			blockPosition: in_block.blockPosition,
+			blockTypeId: in_block.blockTypeId,
+			data: data_arr
+		}
+				
+	}
+}
 
 
 
@@ -200,6 +464,9 @@ impl StartBlock {
 	}
 
 	pub fn get_name(&self) -> OsString{
+		if self.blockPosition == 0{
+			return OsString::from("/")
+		}
 		let unparsed_name = self.name.to_vec();
 		let mut magic_vec : Vec<u8> = Vec::with_capacity(247);
 		for i in unparsed_name{
@@ -207,6 +474,9 @@ impl StartBlock {
 				magic_vec.push(i);
 			}
 		}
+
+
+
 		
 		return OsString::from(String::from_utf8(magic_vec).unwrap())
 	}
@@ -221,13 +491,13 @@ impl StartBlock {
 	pub fn new(hash : [u8; 32],
 		blockPosition : u32,
 		blockTypeId : u32,
-		name : [u8; 247],
+		name : [u8; 128],
 		attributes : MetaData,
 		firstDataBlockPos : u32,
 		firstDataBlockHash : [u8; 32],
 		lastDataBlockPos : u32,
 		lastDataBlockHash : [u8; 32],
-		padding : [u8; 81]) -> Self{
+		) -> Self{
 			StartBlock{hash ,
 				blockPosition,
 				blockTypeId,
@@ -238,7 +508,7 @@ impl StartBlock {
 				firstDataBlockHash,
 				lastDataBlockPos,
 				lastDataBlockHash,
-				padding}
+			}
 		}
 }
 
@@ -332,152 +602,6 @@ impl From<RawBlock> for RawDataBlock{
 
 
 
-
-
-// going from raw with headers to actual block
-impl From<RawDataBlock> for DataBlock{
-	fn from(inBlock : RawDataBlock ) -> Self{
-		let data = inBlock.data;
-		
-		DataBlock {
-			hash : inBlock.hash,
-			blockPosition : inBlock.blockPosition,
-			blockTypeId : inBlock.blockTypeId,
-			data : <[u8; 468]>::try_from(&data[..468]).unwrap(),
-			nextDataBlockPos : u32::from_le_bytes(<[u8; 4]>::try_from(&data[468..]).unwrap()),
-		}	
-	}	
-}
-impl From<DataBlock> for RawDataBlock{
-	fn from(inBlock : DataBlock) -> Self{
-
-		let whole_data : [u8;472] = {
-			let mut whole = [0;472];
-			let (one, two) = whole.split_at_mut(inBlock.data.len());
-			one.copy_from_slice(&inBlock.data);
-			two.copy_from_slice(&inBlock.nextDataBlockPos.to_le_bytes());
-			whole
-		};
-		RawDataBlock{
-			hash : inBlock.hash,
-			blockPosition : inBlock.blockPosition,
-			blockTypeId : inBlock.blockTypeId,
-			data : whole_data 
-			
-		}
-	}
-}
-
-
-
-
-
-impl From<RawDataBlock> for StartBlock{
-	fn from(inBlock : RawDataBlock ) -> Self{
-		let data = inBlock.data;
-
-		StartBlock {
-			hash : inBlock.hash,
-			blockPosition : inBlock.blockPosition,
-			blockTypeId : inBlock.blockTypeId,
-			name : <[u8; 247]>::try_from(&data[..247]).unwrap(),
-			attributes : MetaData{
-				size : u64::from_le_bytes(<[u8; 8]>::try_from(&data[247..255]).unwrap()),
-				blockLen : u64::from_le_bytes(<[u8; 8]>::try_from(&data[255..263]).unwrap()),
-				aTime : u128::from_le_bytes(<[u8; 16]>::try_from(&data[263..279]).unwrap()),
-				mTime : u128::from_le_bytes(<[u8; 16]>::try_from(&data[279..295]).unwrap()),
-				cTime : u128::from_le_bytes(<[u8; 16]>::try_from(&data[295..311]).unwrap()),
-				perm : u16::from_le_bytes(<[u8; 2]>::try_from(&data[311..313]).unwrap()),
-				uid : u32::from_le_bytes(<[u8; 4]>::try_from(&data[313..317]).unwrap()),
-				gid : u32::from_le_bytes(<[u8; 4]>::try_from(&data[317..321]).unwrap()),
-				fileType : inBlock.data[321],
-			},
-			firstDataBlockHash : <[u8; 32]>::try_from(&data[322..354]).unwrap(),
-			firstDataBlockPos : u32::from_le_bytes(<[u8; 4]>::try_from(&data[354..358]).unwrap()),
-			lastDataBlockHash : <[u8; 32]>::try_from(&data[358..390]).unwrap(), 
-			lastDataBlockPos : u32::from_le_bytes(<[u8; 4]>::try_from(&data[390..394]).unwrap()),
-
-			padding : [8; 81],
-		}
-	}	
-}
-
-
-
-
-impl From<StartBlock> for RawBlock{
-	fn from(inBlock : StartBlock) -> Self{
-		let mut dataVec : Vec<u8> = vec![] ;
-		dataVec.reserve(512);
-
-		for byte in inBlock.hash{
-			dataVec.push(byte);
-		}
-		for byte in inBlock.blockPosition.to_le_bytes(){
-			dataVec.push(byte);
-		}
-		for byte in inBlock.name{
-			dataVec.push(byte);
-		}
-		for byte in inBlock.attributes.size.to_le_bytes(){
-			dataVec.push(byte);
-		}
-		for byte in inBlock.attributes.blockLen.to_le_bytes(){
-			dataVec.push(byte);
-		}
-		for byte in inBlock.attributes.aTime.to_le_bytes(){
-			dataVec.push(byte);
-		}
-		for byte in inBlock.attributes.mTime.to_le_bytes(){
-			dataVec.push(byte);
-		}
-		for byte in inBlock.attributes.cTime.to_le_bytes(){
-			dataVec.push(byte);
-		}
-		for byte in inBlock.attributes.perm.to_le_bytes(){
-			dataVec.push(byte);
-		}
-		for byte in inBlock.attributes.uid.to_le_bytes(){
-			dataVec.push(byte);
-		}
-		for byte in inBlock.attributes.gid.to_le_bytes(){
-			dataVec.push(byte);
-		}
-		dataVec.push(inBlock.attributes.fileType);
-		for byte in inBlock.firstDataBlockHash{
-			dataVec.push(byte);
-		}
-		for byte in inBlock.firstDataBlockPos.to_le_bytes(){
-			dataVec.push(byte);
-		}
-		for byte in inBlock.lastDataBlockHash{
-			dataVec.push(byte);
-		}		
-		for byte in inBlock.lastDataBlockPos.to_le_bytes(){
-			dataVec.push(byte);
-		}
-		for byte in inBlock.padding{
-			dataVec.push(byte);
-		}
-		dataVec.push(0);
-		println!("{}",dataVec.len().to_string());
-		let mut dataArr : [u8; 512] = [0;512];
-		for i in 0..512{
-			dataArr[i] = dataVec.as_slice()[i];
-		}
-
-		RawBlock{
-			data: dataArr
-		}
-
-		
-		//dataArr.push(inBlock.hash);
-	}
-}
-
-
-
-
 // Data Block implemetations
 
 impl DataBlock{
@@ -488,7 +612,7 @@ impl DataBlock{
 		hash : [u8; 32],
 		blockPosition : u32,
 		blockTypeId : u32,
-		data : [u8; 468],
+		data : [u8; 448],
 		nextDataBlockPos : u32,) -> Self{
 			DataBlock{
 				hash,
@@ -500,7 +624,7 @@ impl DataBlock{
 		}
 
 
-	pub fn set_data(&mut self, data : [u8;468]){
+	pub fn set_data(&mut self, data : [u8;448]){
 		self.data = data;
 	} 
 
@@ -511,16 +635,16 @@ impl DataBlock{
 
 	// This will output a vector of all of the start blocks pointed to by the data in a data block
 	pub fn parse_to_directory_ptrs(&self, file : &File) -> Vec<u32>{
-		let mut ptr_vec : Vec<u32> = Vec::with_capacity(117);
+		let mut ptr_vec : Vec<u32> = Vec::with_capacity(112);
 		let mut buffer_for_bytes : [u8;4] = [0;4];
 		let data = self.data;
 		let mut data_idr = data.into_iter();
 		let mut perhaps_number : u32;
-		for _i in 0..116{
-			buffer_for_bytes[0] = data_idr.next().unwrap();
-			buffer_for_bytes[1] = data_idr.next().unwrap();
-			buffer_for_bytes[2] = data_idr.next().unwrap();
-			buffer_for_bytes[3] = data_idr.next().unwrap();
+		for _i in 0..112{
+			buffer_for_bytes[0] = data_idr.next().expect("issue1");
+			buffer_for_bytes[1] = data_idr.next().expect("issue2");
+			buffer_for_bytes[2] = data_idr.next().expect("issue2");
+			buffer_for_bytes[3] = data_idr.next().expect("issue2");
 			perhaps_number = u32::from_le_bytes(buffer_for_bytes);
 			if perhaps_number != 0{
 				ptr_vec.push(perhaps_number);
@@ -538,6 +662,9 @@ impl DataBlock{
 	pub fn parse_to_full_data(&self, file : &File) -> Vec<u8>{
 		let mut data_vec : Vec<u8> = Vec::with_capacity(1028);
 		data_vec.append(&mut self.data.to_vec());
+		if data_vec.is_empty(){
+			data_vec.push(0);
+		}
 		if self.nextDataBlockPos != 0 {
 			data_vec.append(&mut data_block_read(&file,self.nextDataBlockPos).parse_to_full_data(file));
 		}
@@ -556,7 +683,7 @@ impl DataBlock{
 			}
 		}
 	}
-	pub fn get_data(self) -> [u8;468] {
+	pub fn get_data(self) -> [u8;448] {
 		return self.data
 	}
 
@@ -564,13 +691,13 @@ impl DataBlock{
 
 	pub fn parse_directory_to_directory_entry_struct_vector(&self, file : &File, _handle : FileHandle) -> Vec<DirectoryEntry>{
 		let directory_ptr_vec = self.parse_to_directory_ptrs(file);
-		let mut directory_entry_vec : Vec<DirectoryEntry> = Vec::with_capacity(117);
+		let mut directory_entry_vec : Vec<DirectoryEntry> = Vec::with_capacity(112);
 
 		for ptr in directory_ptr_vec{
 
 			let block_in_question = start_block_read(&file, ptr);
 
-			let parsed_name = block_in_question.name.to_vec().extract_if(..,|x| *x == 0).collect::<Vec<_>>();
+			let parsed_name = block_in_question.name.to_vec().extract_if(..,|x| *x != 0).collect::<Vec<_>>();
 			directory_entry_vec.push(
 					DirectoryEntry{
 						name : OsString::from(String::from_utf8(parsed_name).unwrap()),
@@ -590,8 +717,3 @@ impl DataBlock{
 			directory_entry_vec
 		}
 	}
-
-
-
-
-

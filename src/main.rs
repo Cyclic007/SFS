@@ -11,7 +11,6 @@ mod driveActions;
 mod blocks;
 //extern crate log;
 mod fileSystem;
-mod fileHandler;
 mod handle;
 struct ConsoleLogger;
 

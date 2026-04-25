@@ -55,7 +55,7 @@ impl FilesystemMT for SecureFileSystem{
 				    .open(self.target.clone()).unwrap();
 				    		
 		let root_block = direct_block_read(&root,0);
-		let root_start_block = StartBlock::from(RawDataBlock::from(root_block));
+		let root_start_block = StartBlock::from(root_block);
 		if root_start_block.hash == [0; 32]{
 			println!("the file system is new");
 			create_dir(&root, OsString::from("/"), 551, 0 ,req.uid,req.gid);
@@ -245,12 +245,18 @@ impl FilesystemMT for SecureFileSystem{
 			println!("file does not exist big sad ");
 			Err(404)
 		} else {
-			println!("directory is being opened");
-			// you have opened the crypt and got cursed
-			Ok((
-				handle.allocate_with_index(root.try_clone().unwrap()),
-				flags
-			))
+			if start_block_read(&root,handle.clone().get_start_block_index(&root.try_clone().unwrap())).attributes.fileType != 0b00001000 {
+				println!("this is not a directory");
+				Err(404)
+			}else {
+
+				println!("directory is being opened");
+				// you have opened the crypt and got cursed
+				Ok((
+					handle.allocate_with_index(root.try_clone().unwrap()),
+					flags
+				))
+			}
 		}
     }
 	// Bonds name
@@ -448,7 +454,20 @@ impl FilesystemMT for SecureFileSystem{
     		    .read(true)
     		    .write(true)
     		    .open(self.target.clone()).unwrap();
-			Ok(data_write(&root,VecDeque::from(data.clone()),usize::try_from(offset).unwrap(),data.len(),FileHandle::read_handle_index(fh),5000,468,0))
+			
+			Ok(
+				data_write(
+					&root,
+					VecDeque::from(data.clone()),
+					usize::try_from(offset).unwrap(),
+					data.len(),
+					FileHandle::read_handle_index(fh),
+					5000,
+					448,
+					0
+				)
+
+			)
 			
 		} 		
 	}
