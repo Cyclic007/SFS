@@ -136,27 +136,24 @@ impl FileHandle {
 	}
 	
 	pub fn get_start_block_index(mut self, file : &File) -> u32{
-		let active_path = self.path.strip_prefix("/").expect("the path hates me and is a filthy rebel");
+
 		let _temp_str = (*self.path).to_str().expect("this path is not a string");
 		if (*self.path).to_str().expect("this path is not a string") == "/"{
 			self.start_block_index = 0;
 			return 0;
 		}else{
-			
 			// first you start with the root block
 			let mut current_start_block = start_block_read(file,0);
 			let mut path_vec : Vec<OsString> = Vec::with_capacity(10);
+			
 			//this means that we now have a vector with all of the parts of the path
-			'outside : for part in active_path.to_path_buf().iter(){
-				
+			'outside : for part in self.path.to_path_buf().iter(){
+
 				let current_data_block = get_data_block_from_start_block(file,&current_start_block);
 				let directory_ptrs = current_data_block.parse_to_directory_ptrs(&file);
-				
 				for ptr in directory_ptrs{
 					let tmp_start_block = start_block_read(file,ptr);
-					let tmp_name = tmp_start_block.get_name();
-					let part_name = part.to_str().unwrap();
-					if tmp_name.to_str().unwrap() == part_name{
+					if tmp_start_block.get_name() == part{
 						current_start_block = tmp_start_block;
 						continue 'outside;
 					}

@@ -55,10 +55,10 @@ impl FilesystemMT for SecureFileSystem{
 				    .open(self.target.clone()).unwrap();
 				    		
 		let root_block = direct_block_read(&root,0);
-		let root_start_block = StartBlock::from(root_block);
+		let root_start_block = StartBlock::from(RawDataBlock::from(root_block));
 		if root_start_block.hash == [0; 32]{
 			println!("the file system is new");
-			create_dir(&root, OsString::from("/"), 551, u32::MAX ,req.uid,req.gid);
+			create_dir(&root, OsString::from("/"), 551, 0 ,req.uid,req.gid);
 //			direct_block_write(&root,RawDataBlock::from(RawBlock::from(StartBlock::new([0;32],0,42,[0;247],MetaData::new(512,1,0,0,0,9,req.uid,req.gid,0),1,[0;32],2,[0;32],[0;81]))),0);
 			println!("made new root block");
 		} 
@@ -95,14 +95,11 @@ impl FilesystemMT for SecureFileSystem{
 				// I need to make a new handle to get the stuff from 			
 				let handle = FileHandle::new(Box::from(path));
 				let block_pos = handle.get_start_block_index(&root.try_clone().unwrap());
-				if block_pos == u32::MAX{
-					Err(2)
-				}else {
-					Ok((
-						now.elapsed().unwrap(),
-						FileAttr::from(start_block_read(&root.try_clone().unwrap(), block_pos).get_attributes()),
-					))
-				}
+
+				Ok((
+					now.elapsed().unwrap(),
+					FileAttr::from(start_block_read(&root.try_clone().unwrap(), block_pos).get_attributes()),
+				))
 				
 			}
 		}
@@ -141,7 +138,7 @@ impl FilesystemMT for SecureFileSystem{
 				let block_pos = handle.get_start_block_index(&root.try_clone().unwrap());
 				if block_pos == 0{
 					println!("file does not exist");
-					Err(2)
+					Err(3)
 				} else {
 					let mut current_block = start_block_read(&root.try_clone().unwrap(),block_pos);
 					current_block.attributes.perm = mode as u16;
@@ -224,7 +221,7 @@ impl FilesystemMT for SecureFileSystem{
 		let handle = FileHandle::new(Box::from(path));		
 		if handle.clone().get_start_block_index(&root.try_clone().unwrap()) == 0 {
 			println!("file does not exist big sad ");
-			Err(2)
+			Err(404)
 		} else {
 			Ok((
 				handle.allocate_with_index(root.try_clone().unwrap()),
@@ -347,9 +344,9 @@ impl FilesystemMT for SecureFileSystem{
     		    .open(self.target.clone()).unwrap();
 			let handle = FileHandle::new(Box::from(path));
 			let block_pos = handle.get_start_block_index(&root.try_clone().unwrap());
-			if block_pos == u32::MAX {
+			if block_pos == 0 {
 				println!("file does not exist");
-				Err(0)
+				Err(3)
 			} else {
 				println!("{}",mask);
 				Ok(())
@@ -380,7 +377,7 @@ impl FilesystemMT for SecureFileSystem{
 			directory_ptrs.clear();
 			println!("directory is being read");
 			let handle = FileHandle::read(fh);
-			let start_block = start_block_read(&root.try_clone().expect("the file is haveing issues"),handle.clone().get_start_block_index(&root.try_clone().expect("file is haveing isses number 2")));
+			let start_block = start_block_read(&root.try_clone().unwrap(),handle.clone().get_start_block_index(&root.try_clone().unwrap()));
 			Ok(data_block_read(&root,start_block.get_data_start_pos()).parse_directory_to_directory_entry_struct_vector(&root,handle.clone()))
 			
 			
