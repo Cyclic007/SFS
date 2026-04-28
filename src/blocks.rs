@@ -659,6 +659,27 @@ impl DataBlock{
 		ptr_vec
 	}
 
+	pub fn find_directory_entry_slot(&self, start_block_index_in_question : u32) -> Result<u32,&str>{
+		let mut ptr_vec : Vec<u32> = Vec::with_capacity(112);
+		let mut buffer_for_bytes : [u8;4] = [0;4];
+		let data = self.data;
+		let mut data_idr = data.into_iter();
+		let mut perhaps_number : u32;
+		for i in 0..112{
+			buffer_for_bytes[0] = data_idr.next().expect("issue1");
+			buffer_for_bytes[1] = data_idr.next().expect("issue2");
+			buffer_for_bytes[2] = data_idr.next().expect("issue2");
+			buffer_for_bytes[3] = data_idr.next().expect("issue2");
+			perhaps_number = u32::from_le_bytes(buffer_for_bytes);
+			if perhaps_number == start_block_index_in_question{
+				Ok((u32::from(i)))
+			}else {
+				continue;
+			}
+		}
+		Err("errrr")
+	}
+
 	pub fn parse_to_full_data(&self, file : &File) -> Vec<u8>{
 		let mut data_vec : Vec<u8> = Vec::with_capacity(1028);
 		data_vec.append(&mut self.data.to_vec());
