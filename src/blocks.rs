@@ -68,7 +68,7 @@ impl From<MetaData> for FileAttr{
 			16 => FileType::RegularFile,
 			32 => FileType::Symlink, 
 			64 => FileType::Socket,
-			_ => FileType::Directory
+			_ => FileType::RegularFile
 			},
 			nlink : 1,
 			rdev : 0,
@@ -136,7 +136,7 @@ pub struct StartBlock {
 	name : [u8; 128],				// 038 - 0A7
 	pub attributes : MetaData,		// 0A8 - 0F2
 	// padding 						// 0F3 - 0FF
-	firstDataBlockPos : u32,		// 100 - 104
+	pub firstDataBlockPos : u32,	// 100 - 104
 	// padding 						// 105 - 10F
 	firstDataBlockHash : [u8; 32],	// 110 - 12F
 	lastDataBlockPos : u32,			// 130 - 134
@@ -335,7 +335,7 @@ pub struct DataBlock {
 	// padding						// 028 - 02F
 	pub blockPosition : u32,		// 020 - 023
 	blockTypeId : u32,				// 024 - 027
-	data : [u8; 448],				// 030 - 1EF
+	pub data : [u8; 448],				// 030 - 1EF
 	//padding						// 1F0 - 1FB
 	pub nextDataBlockPos : u32,		// 1FC - 1FF
 }

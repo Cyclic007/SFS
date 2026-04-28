@@ -135,10 +135,12 @@ impl FileHandle {
 		store.remove_handle(number);
 	}
 	
-	pub fn get_start_block_index(mut self, file : &File) -> u32{
+	pub fn get_start_block_index(&mut self, file : &File) -> u32{
 
 		let _temp_str = (*self.path).to_str().expect("this path is not a string");
+		println!("{}",(*self.path).to_str().expect("this path is not a string"));
 		if (*self.path).to_str().expect("this path is not a string") == "/"{
+			println!("this is the root dir");
 			self.start_block_index = 0;
 			return 0;
 		}else{
@@ -148,17 +150,23 @@ impl FileHandle {
 			
 			//this means that we now have a vector with all of the parts of the path
 			'outside : for part in self.path.to_path_buf().iter(){
+				if part.to_str().expect("this part is not a string") == "/"{
+					continue 'outside;
+				}
 
+				
 				let current_data_block = get_data_block_from_start_block(file,&current_start_block);
 				let directory_ptrs = current_data_block.parse_to_directory_ptrs(&file);
 				for ptr in directory_ptrs{
 					let tmp_start_block = start_block_read(file,ptr);
-					if tmp_start_block.get_name() == part{
+					println!("{},{}",tmp_start_block.get_name().to_str().expect("this name is not a string"),part.to_str().expect("this part is not a string"));
+					if tmp_start_block.get_name().to_str().expect("this name is not a string") == part.to_str().expect("this part is not a string"){
+						println!("found the name of the current part");
 						current_start_block = tmp_start_block;
 						continue 'outside;
 					}
 				}
-				println!("this file does not exist");
+				println!("this file does not exist from handles");
 				return u32::MAX
 			}
 			self.start_block_index = current_start_block.blockPosition;

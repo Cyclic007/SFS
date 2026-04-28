@@ -14,8 +14,9 @@ use std::time::SystemTime;
 use std::collections::VecDeque;
 //use super::handle;
 use super::driveActions::direct_block_read;
-use super::driveActions::{direct_block_write,start_block_read,data_block_read,data_write,data_read,create_dir};
+use super::driveActions::{direct_block_write,start_block_read,data_block_read,data_write,data_read,create_dir,create_file};
 use super::blocks::{RawDataBlock,RawBlock,StartBlock,DataBlock,MetaData};
+
 impl SecureFileSystem{
 	pub fn new( os : OsString) -> Self{
 		Self{
@@ -77,7 +78,7 @@ impl FilesystemMT for SecureFileSystem{
     ) -> fuse_mt::ResultEntry {
 
 		if self.access(req,path,2).is_err(){
-			Err(404)
+			Err(1)
 		}else {
 		    let root = File::options()
 		    		    .read(true)
@@ -93,14 +94,17 @@ impl FilesystemMT for SecureFileSystem{
 				))
 			}else {
 				// I need to make a new handle to get the stuff from 			
-				let handle = FileHandle::new(Box::from(path));
+				let mut handle = FileHandle::new(Box::from(path));
 				let block_pos = handle.get_start_block_index(&root.try_clone().unwrap());
-
-				Ok((
-					now.elapsed().unwrap(),
-					FileAttr::from(start_block_read(&root.try_clone().unwrap(), block_pos).get_attributes()),
-				))
+				if block_pos == u32::MAX{
+					Err(2)
+				}else{
 				
+					Ok((
+						now.elapsed().unwrap(),
+						FileAttr::from(start_block_read(&root.try_clone().unwrap(), block_pos).get_attributes()),
+					))
+				}
 			}
 		}
 	}
@@ -134,11 +138,11 @@ impl FilesystemMT for SecureFileSystem{
 				direct_block_write(&root,RawDataBlock::from(RawBlock::from(current_block)),FileHandle::read_handle_index(handle_index));
 				Ok(())
 			} else {
-				let handle = FileHandle::new(Box::from(path));
+				let mut handle = FileHandle::new(Box::from(path));
 				let block_pos = handle.get_start_block_index(&root.try_clone().unwrap());
-				if block_pos == 0{
+				if block_pos == u32::MAX{
 					println!("file does not exist");
-					Err(3)
+					Err(2)
 				} else {
 					let mut current_block = start_block_read(&root.try_clone().unwrap(),block_pos);
 					current_block.attributes.perm = mode as u16;
@@ -159,7 +163,7 @@ impl FilesystemMT for SecureFileSystem{
 	) -> ResultEmpty {
 		if req.uid != 0 {
 			println!("not root user not allowed to change permissions");
-			Err(3)
+			Err(1)
 		}else {
 			
 			//this means that root is changeing permissions
@@ -185,11 +189,11 @@ impl FilesystemMT for SecureFileSystem{
 				direct_block_write(&root,RawDataBlock::from(RawBlock::from(current_block)),FileHandle::read_handle_index(handle_index));
 				Ok(())
 			} else {
-				let handle = FileHandle::new(Box::from(path));
+				let mut handle = FileHandle::new(Box::from(path));
 				let block_pos = handle.get_start_block_index(&root.try_clone().unwrap());
-				if block_pos == 0{
+				if block_pos == u32::MAX{
 					println!("file does not exist");
-					Err(3)
+					Err(2)
 				} else {
 					let mut current_block = start_block_read(&root.try_clone().unwrap(),block_pos);
 					if let Some(new_uid) = uid {
@@ -218,10 +222,10 @@ impl FilesystemMT for SecureFileSystem{
    		    .read(true)
    		    .write(true)
    		    .open(self.target.clone()).unwrap();
-		let handle = FileHandle::new(Box::from(path));		
-		if handle.clone().get_start_block_index(&root.try_clone().unwrap()) == 0 {
+		let mut handle = FileHandle::new(Box::from(path));
+		if handle.clone().get_start_block_index(&root.try_clone().unwrap()) == u32::MAX {
 			println!("file does not exist big sad ");
-			Err(404)
+			Err(2)
 		} else {
 			Ok((
 				handle.allocate_with_index(root.try_clone().unwrap()),
@@ -240,14 +244,14 @@ impl FilesystemMT for SecureFileSystem{
    		    .read(true)
    		    .write(true)
    		    .open(self.target.clone()).unwrap();
-		let handle = FileHandle::new(Box::from(path));		
+		let mut handle = FileHandle::new(Box::from(path));		
 		if handle.clone().get_start_block_index(&root.try_clone().unwrap()) == u32::MAX {
 			println!("file does not exist big sad ");
-			Err(404)
+			Err(2)
 		} else {
 			if start_block_read(&root,handle.clone().get_start_block_index(&root.try_clone().unwrap())).attributes.fileType != 0b00001000 {
 				println!("this is not a directory");
-				Err(404)
+				Err(20)
 			}else {
 
 				println!("directory is being opened");
@@ -316,9 +320,9 @@ impl FilesystemMT for SecureFileSystem{
 				direct_block_write(&root,RawDataBlock::from(RawBlock::from(current_block)),FileHandle::read_handle_index(handle_index));
 				Ok(())
 			} else {
-				let handle = FileHandle::new(Box::from(path));
+				let mut handle = FileHandle::new(Box::from(path));
 				let block_pos = handle.get_start_block_index(&root.try_clone().unwrap());
-				if block_pos == 0{
+				if block_pos == u32::MAX{
 					println!("file does not exist");
 					Err(3)
 				} else {
@@ -348,7 +352,7 @@ impl FilesystemMT for SecureFileSystem{
     		    .read(true)
     		    .write(true)
     		    .open(self.target.clone()).unwrap();
-			let handle = FileHandle::new(Box::from(path));
+			let mut handle = FileHandle::new(Box::from(path));
 			let block_pos = handle.get_start_block_index(&root.try_clone().unwrap());
 			if block_pos == 0 {
 				println!("file does not exist");
@@ -420,8 +424,8 @@ impl FilesystemMT for SecureFileSystem{
 						),
 						usize::try_from(size).unwrap(),
 						match size{
-							0..468 => usize::try_from(size).unwrap(),
-							_ => 468
+							0..448 => usize::try_from(size).unwrap(),
+							_ => 448
 						},
 						inner_block_offset
 								
@@ -485,17 +489,53 @@ impl FilesystemMT for SecureFileSystem{
 		}else{
 			let now = SystemTime::now();
 			println!("attempting to create directory at {}",parent.to_str().expect("unable to parse parent path to str"));    		    
+						
 			
-			
-			let tempHandle = FileHandle::new(Box::from(parent));
+			let mut tempHandle = FileHandle::new(Box::from(parent));
 			let root = File::options()
     		    .read(true)
     		    .write(true)
     		    .open(self.target.clone()).expect("unable to open file");
 
-			Ok((now.elapsed().unwrap(),FileAttr::from(create_dir(&root, name.to_os_string(), mode, tempHandle.get_start_block_index(&root),req.uid,req.gid))))
+			let mut check_handle = FileHandle::new(Box::from(parent.join(name)));
+			if check_handle.get_start_block_index(&root) == u32::MAX{
+				println!("the parent has no start block");
+				Err(2)
+			}else{
+			
+				Ok((now.elapsed().unwrap(),FileAttr::from(create_dir(&root, name.to_os_string(), mode, tempHandle.get_start_block_index(&root),req.uid,req.gid))))
+			}
 		}			
 	}
+
+	fn mknod(&self, req: RequestInfo, parent: &Path, name: &OsStr, mode: u32, rdev: u32) -> ResultEntry {
+	    if self.access(req,parent,4).is_err(){
+   			Err(404)	
+   		}else{
+   			let now = SystemTime::now();
+   			println!("attempting to create file at {}",parent.to_str().expect("unable to parse parent path to str"));    		    
+   			
+   			let root = File::options()
+       		    .read(true)
+       		    .write(true)
+       		    .open(self.target.clone()).expect("unable to open file");
+      			
+   			let mut temp_handle = FileHandle::new(Box::from(parent));
+			let mut check_handle = FileHandle::new(Box::from(parent.join(name)));
+
+			if check_handle.get_start_block_index(&root) != u32::MAX{
+				Err(2)
+			}else{
+				if temp_handle.get_start_block_index(&root) == u32::MAX{
+					Err(2)
+				}else{
+				
+		   			Ok((now.elapsed().unwrap(),FileAttr::from(create_file(&root, name.to_os_string(), u16::try_from(mode).expect("mode is not 16 bit"), temp_handle.get_start_block_index(&root),req.uid,req.gid))))
+				}
+			}
+   		}
+	}
+
 
 //pub fn create_dir(driveFile : &File, name : OsString, mode : u32, parent_start_index : u32, uid : u32, gid : u32) -> MetaData{
 	
