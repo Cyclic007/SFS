@@ -136,36 +136,6 @@ impl FileHandle {
 	}
 
 
-	// this returns (data_block_index , directory entry slot)
-	pub fn get_directory_entry(&self, file : &File) -> (u32 , u32){
-		let parent_path = (*self.path).parent().expect("this path has no parents");
-		let mut current_start_block = start_block_read(file,0);
-		let mut path_vec : Vec<OsString> = Vec::with_capacity(10);
-		let mut before_start_block = start_block_read(file,0);
-		//this means that we now have a vector with all of the parts of the path
-		'outside : for part in parent_path.to_path_buf().iter(){
-			if part.to_str().expect("this part is not a string") == "/"{
-				continue 'outside;
-			}
-
-			
-			let current_data_block = get_data_block_from_start_block(file,&current_start_block);
-			let directory_ptrs = current_data_block.parse_to_directory_ptrs(&file);
-			for ptr in directory_ptrs{
-				let tmp_start_block = start_block_read(file,ptr);
-				println!("{},{}",tmp_start_block.get_name().to_str().expect("this name is not a string"),part.to_str().expect("this part is not a string"));
-				if tmp_start_block.get_name().to_str().expect("this name is not a string") == part.to_str().expect("this part is not a string"){
-					println!("found the name of the current part");
-					before_start_block = current_start_block;
-					current_start_block = tmp_start_block;
-					
-					continue 'outside;
-				}
-			}
-			println!("this file does not exist from handles");
-		}
-		(before_start_block.blockPosition,data_block_read(file,before_start_block.firstDataBlockPos).find_directory_entry_slot(current_start_block.blockPosition).expect("this block does not exist"))	
-	}
 
 
 
@@ -202,6 +172,7 @@ impl FileHandle {
 					}
 				}
 				println!("this file does not exist from handles");
+				self.start_block_index = u32::MAX;
 				return u32::MAX
 			}
 			self.start_block_index = current_start_block.blockPosition;

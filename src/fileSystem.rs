@@ -14,7 +14,7 @@ use std::time::SystemTime;
 use std::collections::VecDeque;
 //use super::handle;
 use super::driveActions::direct_block_read;
-use super::driveActions::{direct_block_write,start_block_read,data_block_read,data_write,data_read,create_dir,create_file};
+use super::driveActions::{direct_block_write,start_block_read,data_block_read,data_write,data_read,create_dir,create_file,delete_file};
 use super::blocks::{RawDataBlock,RawBlock,StartBlock,DataBlock,MetaData};
 
 impl SecureFileSystem{
@@ -498,7 +498,7 @@ impl FilesystemMT for SecureFileSystem{
     		    .open(self.target.clone()).expect("unable to open file");
 
 			let mut check_handle = FileHandle::new(Box::from(parent.join(name)));
-			if check_handle.get_start_block_index(&root) == u32::MAX{
+			if check_handle.get_start_block_index(&root) != u32::MAX{
 				println!("the parent has no start block");
 				Err(2)
 			}else{
@@ -536,6 +536,25 @@ impl FilesystemMT for SecureFileSystem{
    		}
 	}
 
+
+
+	fn unlink(&self, req: RequestInfo, parent: &Path, name: &OsStr) -> ResultEmpty {
+	    if self.access(req,parent,2).is_err(){
+   			Err(404)	
+   		}else {
+   			let root = File::options()
+	   		    .read(true)
+	   		    .write(true)
+	   		    .open(self.target.clone()).expect("unable to open file");
+   			let mut tmp_parent_handle = FileHandle::new(Box::from(parent));
+			let tmp_parent_index = tmp_parent_handle.get_start_block_index(&root);
+   			let mut tmp_to_be_del_handle = FileHandle::new(Box::from(parent.join(name)));
+			let tmp_to_be_del_index = tmp_to_be_del_handle.get_start_block_index(&root);
+			
+   			delete_file(&root,tmp_to_be_del_index,tmp_parent_index);
+   			Ok(())
+   		}
+	}
 
 //pub fn create_dir(driveFile : &File, name : OsString, mode : u32, parent_start_index : u32, uid : u32, gid : u32) -> MetaData{
 	
