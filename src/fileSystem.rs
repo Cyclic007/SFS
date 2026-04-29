@@ -77,7 +77,7 @@ impl FilesystemMT for SecureFileSystem{
         fh: Option<u64>,
     ) -> fuse_mt::ResultEntry {
 
-		if self.access(req,path,2).is_err(){
+		if self.access(req,path,4).is_err(){
 			Err(1)
 		}else {
 		    let root = File::options()
@@ -304,7 +304,7 @@ impl FilesystemMT for SecureFileSystem{
         fh: Option<u64>,
         size: u64,
     ) -> ResultEmpty { 
-		if self.access(req,path,2).is_err(){
+		if self.access(req,path,4).is_err(){
 			Err(404)	
 		}else {
 			
@@ -352,14 +352,28 @@ impl FilesystemMT for SecureFileSystem{
     		    .read(true)
     		    .write(true)
     		    .open(self.target.clone()).unwrap();
+    		let mut needed_mode = 0;
 			let mut handle = FileHandle::new(Box::from(path));
 			let block_pos = handle.get_start_block_index(&root.try_clone().unwrap());
-			if block_pos == 0 {
+			let start_block = start_block_read(&root,block_pos);
+			if start_block.attributes.uid == req.uid{
+				needed_mode = start_block.attributes.perm / 64;
+			} else if start_block.attributes.gid == req.gid{
+				needed_mode = start_block.attributes.perm%8 / 8;
+			} else {
+				needed_mode = start_block.attributes.perm % 8;
+			}
+			if block_pos == u32::MAX {
 				println!("file does not exist");
 				Err(3)
 			} else {
-				println!("{}",mask);
-				Ok(())
+				if mask & u32::from(needed_mode) != 0{
+					println!("{}",mask);
+					Ok(())					
+				}else {
+					Err(1)
+				}
+
 			}
 			
 						
@@ -451,7 +465,7 @@ impl FilesystemMT for SecureFileSystem{
 	    data: Vec<u8>,
 	    _flags: u32,
 	) -> ResultWrite {
-		if self.access(req,path,4).is_err(){
+		if self.access(req,path,2).is_err(){
 			Err(404)	
 		}else{
 			let root = File::options()
@@ -484,7 +498,7 @@ impl FilesystemMT for SecureFileSystem{
 	    name: &OsStr,
 	    mode: u32,
 	) -> ResultEntry {
-		if self.access(req,parent,4).is_err(){
+		if self.access(req,parent,2).is_err(){
 			Err(404)	
 		}else{
 			let now = SystemTime::now();
@@ -509,7 +523,7 @@ impl FilesystemMT for SecureFileSystem{
 	}
 
 	fn mknod(&self, req: RequestInfo, parent: &Path, name: &OsStr, mode: u32, rdev: u32) -> ResultEntry {
-	    if self.access(req,parent,4).is_err(){
+	    if self.access(req,parent,2).is_err(){
    			Err(404)	
    		}else{
    			let now = SystemTime::now();
@@ -554,6 +568,25 @@ impl FilesystemMT for SecureFileSystem{
    			delete_file(&root,tmp_to_be_del_index,tmp_parent_index);
    			Ok(())
    		}
+	}
+
+	fn rmdir(&self, req: RequestInfo, parent: &Path, name: &OsStr) -> ResultEmpty {
+	    if self.access(req,parent,2).is_err(){
+   			Err(404)	
+   		}else {
+   			let root = File::options()
+	   		    .read(true)
+	   		    .write(true)
+	   		    .open(self.target.clone()).expect("unable to open file");
+   			let mut tmp_parent_handle = FileHandle::new(Box::from(parent));
+			let tmp_parent_index = tmp_parent_handle.get_start_block_index(&root);
+   			let mut tmp_to_be_del_handle = FileHandle::new(Box::from(parent.join(name)));
+			let tmp_to_be_del_index = tmp_to_be_del_handle.get_start_block_index(&root);
+			
+   			delete_file(&root,tmp_to_be_del_index,tmp_parent_index);
+   			Ok(())
+   		}
+
 	}
 
 //pub fn create_dir(driveFile : &File, name : OsString, mode : u32, parent_start_index : u32, uid : u32, gid : u32) -> MetaData{

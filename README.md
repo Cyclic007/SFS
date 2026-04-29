@@ -1,2 +1,35 @@
 # SFS
 Secure File system
+
+This is a FUSE file system that I made as my first real rust project
+
+this was inspired by DocJade 
+
+
+
+
+
+# Systems
+
+this File System uses 512 byte blocks to store data where each block contains a hash of it's contents
+
+
+
+# how to run
+
+## This will not work on windows without lots of fiddleing around with WSL
+
+- you run this command inside of the repo
+'cargo run <the device or vitual image path> <the mount path>' 
+
+- and that will mount the file system to your device at the specified mount point
+
+
+--- 
+
+### this file system does not support
+- links
+- renameing files
+- TTL
+- seting modification times to files
+
