@@ -1,5 +1,5 @@
 [package]
-name = "SFS"
+name = "Secure_File_System"
 version = "0.1.0"
 edition = "2024"
 description = "a custom file system"
