@@ -20,7 +20,9 @@ this File System uses 512 byte blocks to store data where each block contains a 
 ## This will not work on windows without lots of fiddleing around with WSL
 
 - you run this command inside of the repo
-'cargo run <the device or vitual image path> <the mount path>' 
+'cargo run \<the device or vitual image path\> \<the mount path\>'
+
+- or you run the executible with the same arguments 
 
 - and that will mount the file system to your device at the specified mount point
 
@@ -29,7 +31,7 @@ this File System uses 512 byte blocks to store data where each block contains a 
 
 ### this file system does not support
 - links
-- renameing files
+- renaming files
 - TTL
 - seting modification times to files
 
