@@ -24,7 +24,9 @@ this File System uses 512 byte blocks to store data where each block contains a 
 
 - or you run the executible with the same arguments 
 
-- and that will mount the file system to your device at the specified mount point
+- and that will mount the file system to your device at the specified mount point and hold your terminal hostage
+
+- to interact with the file system you use a seprate terminal
 
 
 --- 
