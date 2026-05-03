@@ -19,6 +19,8 @@ this File System uses 512 byte blocks to store data where each block contains a 
 
 ## This will not work on windows without lots of fiddleing around with WSL
 
+### you will need to run as root
+
 - you run this command inside of the repo
 'cargo run \<the device or vitual image path\> \<the mount path\>'
 
@@ -28,6 +30,7 @@ this File System uses 512 byte blocks to store data where each block contains a 
 
 - to interact with the file system you use a seprate terminal
 
+- a quark of how this works means that the mount point becomes owned by root so you need to be root to run commands inside unless you chmod or chown the mount point directory
 
 --- 
 
