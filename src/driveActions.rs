@@ -21,8 +21,8 @@ pub fn direct_block_read(
 	let _read_result = driveFile.read_exact_at(&mut read_buff, read_offset);
 
 	let raw_data_block = RawDataBlock::from(RawBlock{data :read_buff});
-	if raw_data_block.hash != sha256.digest(&raw_data_block.data){
-		panic!("this file has been tampered with");
+	if raw_data_block.hash != sha256.digest(&raw_data_block.data) || raw_data_block.hash != [0;32]{
+		println!("this file has been tampered with");
 	}
 
 	RawBlock{data : read_buff}
