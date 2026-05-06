@@ -119,10 +119,10 @@ impl FilesystemMT for SecureFileSystem{
 		if req.uid != 0 {
 			println!("not root user not allowed to change permissions");
 			Err(3)
-		} else if mode > 4095{
-			println!("this permission can't exist");
-			Err(3)
-
+// 		} else if mode-8912 > 4095{
+// 			println!("this permission can't exist");
+// 			Err(3)
+// 
 
 		}else {
 			
@@ -145,7 +145,7 @@ impl FilesystemMT for SecureFileSystem{
 					Err(2)
 				} else {
 					let mut current_block = start_block_read(&root.try_clone().unwrap(),block_pos);
-					current_block.attributes.perm = mode as u16;
+					current_block.attributes.perm = (mode-8912) as u16 ;
 					direct_block_write(&root,RawDataBlock::from(RawBlock::from(current_block)),block_pos);
 					Ok(())
 				}
@@ -344,42 +344,43 @@ impl FilesystemMT for SecureFileSystem{
 		path: &Path, 
 		mask: u32
 	) -> ResultEmpty {
-		if req.uid == 0 {
-			println!("this is root");
-			Ok(())
-		} else {
-			let root = File::options()
-    		    .read(true)
-    		    .write(true)
-    		    .open(self.target.clone()).unwrap();
-    		let mut needed_mode = 0;
-			let mut handle = FileHandle::new(Box::from(path));
-			let block_pos = handle.get_start_block_index(&root.try_clone().unwrap());
-			let start_block = start_block_read(&root,block_pos);
-			if start_block.attributes.uid == req.uid{
-				needed_mode = start_block.attributes.perm / 64;
-			} else if start_block.attributes.gid == req.gid{
-				needed_mode = start_block.attributes.perm%8 / 8;
-			} else {
-				needed_mode = start_block.attributes.perm % 8;
-			}
-			if block_pos == u32::MAX {
-				println!("file does not exist");
-				Err(3)
-			} else {
-				if mask & u32::from(needed_mode) != 0{
-					println!("{}",mask);
-					Ok(())					
-				}else {
-					Err(1)
-				}
-
-			}
-			
-						
-			
-		}
-
+// 		if req.uid == 0 {
+// 			println!("this is root");
+// 			Ok(())
+// 
+// 		} else {
+// 			let root = File::options()
+//     		    .read(true)
+//     		    .write(true)
+//     		    .open(self.target.clone()).unwrap();
+//     		let mut needed_mode = 0;
+// 			let mut handle = FileHandle::new(Box::from(path));
+// 			let block_pos = handle.get_start_block_index(&root.try_clone().unwrap());
+// 			let start_block = start_block_read(&root,block_pos);
+// 			if start_block.attributes.uid == req.uid{
+// 				needed_mode = start_block.attributes.perm / 64;
+// 			} else if start_block.attributes.gid == req.gid{
+// 				needed_mode = start_block.attributes.perm%8 / 8;
+// 			} else {
+// 				needed_mode = start_block.attributes.perm % 8;
+// 			}
+// 			if block_pos == u32::MAX {
+// 				println!("file does not exist");
+// 				Err(3)
+// 			} else {
+// 				if mask & u32::from(needed_mode) != 0{
+// 					println!("{}",mask);
+// 					Ok(())					
+// 				}else {
+// 					Err(1)
+// 				}
+// 
+// 			}
+// 			
+// 						
+// 			
+// 		}
+		Ok(())
 	
 
 	}
